@@ -68,16 +68,26 @@ export default async function portals({ browser, ok }) {
   await page.waitForTimeout(1300);
   const title = await page.locator('.panel-head h2').textContent();
   ok('玩家討論串可開啟', title.includes('玩家討論'), title);
-  await page.locator('.composer input').fill('這是測試留言');
-  await page.locator('.composer button').click();
-  await page.waitForTimeout(1000);
-  ok('可以本地發言', (await page.locator('.post').count()) === 11, `留言數 ${await page.locator('.post').count()}`);
+  // 貼文是跟後端要的，面板會先以 loading 狀態開起來 —— 固定等待量到的是空的。
+  for (let i = 0; i < 40 && !(await page.locator('.post').count()); i++) {
+    await page.waitForTimeout(100);
+  }
+  // ⚠ 這裡**刻意不真的送出**。發言已經不是本地的了：POST /api/discussions
+  //   會寫進團隊共用的 DynamoDB，並以 MAIA 官方帳號發到真的 Threads 上。
+  //   無人看管的測試不該有那種副作用。改為驗「輸入介面在、且討論串確實
+  //   從後端載到了貼文」；發文本身由 agent-core 的 test_threads_bridge 覆蓋。
+  ok('討論串有從後端載到貼文', (await page.locator('.post').count()) > 0,
+    `留言數 ${await page.locator('.post').count()}`);
+  ok('發言輸入框可用',
+    (await page.locator('.composer input').isEnabled()) && (await page.locator('.composer button').count()) > 0);
 
   // 泡泡的內容必須真的來自這間房的討論串，不是寫死的裝飾字串。
   // 這條是端到端的：遊戲層 → src/api → 命令式 DOM。
   const posts = await page.locator('.post').allTextContents();
   const head = (bubble ?? '').replace(/…$/, '');
-  ok('泡泡講的是討論串裡真的留言', head.length > 6 && posts.some((p) => p.includes(head)), head);
+  // 門檻放在 2 個字：真實貼文可能很短（DB 裡就有一則只有五個字的「我是慢癈龍」），
+  // 原本的 > 6 是照著 mock 那批長句子訂的。
+  ok('泡泡講的是討論串裡真的留言', head.length >= 2 && posts.some((p) => p.includes(head)), head);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 

@@ -1,4 +1,4 @@
-import { openPage, walkTo, waitForPanel } from './lib/harness.mjs';
+import { openPage, gameState, walkTo, waitForPanel, settle } from './lib/harness.mjs';
 
 const SIZES = [
   [1440, 900, '桌機'],
@@ -71,22 +71,33 @@ export default async function layout({ browser, ok }) {
   await page.keyboard.press('KeyE');
   await waitForPanel(page);
   await page.locator('.rank-row').first().click();
-  await page.waitForTimeout(1600);
+  // 等轉場真的結束再走位。固定 waitForTimeout 在討論串改接後端之後不夠了 ——
+  // 面板會先以 loading 狀態開起來，.thread 與 .composer 都還沒 render，
+  // 這時量到的是「有面板但沒有內容」，看起來像版面壞掉。
+  for (let i = 0; i < 60 && (await gameState(page)).room.id !== 'discussion'; i++) {
+    await page.waitForTimeout(100);
+  }
+  await settle(page);
   await walkTo(page, 578, 292);
   await page.keyboard.press('KeyE');
-  await page.waitForTimeout(1400);
+  await waitForPanel(page);
+  for (let i = 0; i < 40 && !(await page.locator('.thread').count()); i++) {
+    await page.waitForTimeout(100);
+  }
 
   const m = await page.evaluate(() => {
     const thread = document.querySelector('.thread');
     const composer = document.querySelector('.composer');
     const panel = document.querySelector('.panel');
     return {
-      threadScrolls: thread ? thread.scrollHeight > thread.clientHeight + 1 : null,
+      // 不驗「現在有沒有捲軸」—— 貼文改由後端提供之後，那取決於這間房剛好
+      // 有幾則留言。要守的是版面規則：討論串自己捲，不是整個面板被撐長。
+      threadScrolls: thread ? ['auto', 'scroll'].includes(getComputedStyle(thread).overflowY) : null,
       composerBottom: composer ? Math.round(composer.getBoundingClientRect().bottom) : null,
       panelBottom: Math.round(panel.getBoundingClientRect().bottom),
     };
   });
-  ok('討論串內部有捲軸', m.threadScrolls === true);
+  ok('討論串自己捲而不是撐長面板', m.threadScrolls === true);
   ok('輸入框固定在面板內', m.composerBottom !== null && m.composerBottom <= m.panelBottom,
     `composer=${m.composerBottom} panel=${m.panelBottom}`);
   ok('面板不超出 560 高的視窗', m.panelBottom <= 560, `bottom=${m.panelBottom}`);
