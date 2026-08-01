@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { setViewInset } from '../../engine/viewport';
-import type { ReactNode } from 'react';
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import {
   ask,
   loadSessionInto,
@@ -62,8 +62,13 @@ const SUGGESTIONS = [
   '這一年的手續費花了多少',
 ];
 
-/** dock 展開時的寬度。同一個數字要餵給鏡頭，否則角色會躲進 dock 底下。 */
-const DOCK_W = 340;
+/** dock 展開時的寬度：預設放大到 400，可拖曳左緣調整（存 localStorage），夾在 min/max 之間。
+ *  同一個數字要餵給鏡頭 setViewInset，否則角色會躲進 dock 底下。 */
+const DOCK_DEFAULT = 400;
+const DOCK_MIN = 320;
+const DOCK_MAX = 680;
+const DOCK_W_KEY = 'maia-dock-w';
+const clampW = (w: number): number => Math.min(DOCK_MAX, Math.max(DOCK_MIN, Math.round(w)));
 
 /**
  * 這個 workshop 帳號實測可用的 Claude 模型（opus-5/opus-4-8/sonnet-5 未授權）。
@@ -110,6 +115,37 @@ export function AgentDock() {
   const { chat: open } = useDock();
   const { msgs, chips, status, busy, approval, readerAlerts, charts } = useChat();
   const [text, setText] = useState('');
+
+  // dock 寬度：可拖曳左緣調整，存 localStorage。dockWRef 讓拖曳結束時存到最新值。
+  const [dockW, setDockW] = useState<number>(() => {
+    try {
+      const v = parseInt(localStorage.getItem(DOCK_W_KEY) ?? '', 10);
+      return Number.isFinite(v) ? clampW(v) : DOCK_DEFAULT;
+    } catch {
+      return DOCK_DEFAULT;
+    }
+  });
+  const dockWRef = useRef(dockW);
+  dockWRef.current = dockW;
+
+  /** 按住左緣拖曳調整寬度。dock 靠右 → 寬度 = 視窗寬 − 滑鼠 x。放開才寫 localStorage。 */
+  const startResize = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    const onMove = (ev: MouseEvent) => setDockW(clampW(window.innerWidth - ev.clientX));
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+      try {
+        localStorage.setItem(DOCK_W_KEY, String(dockWRef.current));
+      } catch {
+        /* 無痕模式寫不了就算了 */
+      }
+    };
+    document.body.style.userSelect = 'none'; // 拖曳時別選到文字
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
   // 選到的模型記在 localStorage，重整/收合再開都還在。無痕模式讀寫失敗就退回預設。
   const [model, setModel] = useState<string>(() => {
     try {
@@ -145,9 +181,9 @@ export function AgentDock() {
    * 收起來時要記得歸零 —— 否則世界會永遠留著一條看不見的邊界。
    */
   useEffect(() => {
-    setViewInset({ right: open ? DOCK_W : 0 });
+    setViewInset({ right: open ? dockW : 0 });
     return () => setViewInset({ right: 0 });
-  }, [open]);
+  }, [open, dockW]);
 
   // 串流文字的命令式通道。dock 重新掛載時要把已經串出來的字補回去，
   // 否則收合再打開會看到答案憑空少了一半。
@@ -201,7 +237,8 @@ export function AgentDock() {
   }
 
   return (
-    <aside className="maia-dock" style={{ width: DOCK_W }} data-testid="agent-dock">
+    <aside className="maia-dock" style={{ width: dockW }} data-testid="agent-dock">
+      <div className="maia-dock-resize" onMouseDown={startResize} title="拖曳調整寬度" />
       <header className="maia-dock-head">
         <span className="maia-dot" data-busy={busy ? '1' : '0'} />
         <h2>MAIA</h2>

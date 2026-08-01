@@ -336,6 +336,18 @@
     border-radius: 0;
   }
 
+  /* 左緣拖曳把手：調整 dock 寬度 */
+  .maia-dock-resize {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: ew-resize;
+    z-index: 6;
+  }
+  .maia-dock-resize:hover { box-shadow: inset 3px 0 0 var(--max); }
+
   .maia-dock-head {
     display: flex;
     align-items: center;
