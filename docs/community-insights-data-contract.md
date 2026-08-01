@@ -1,7 +1,7 @@
 # 社群每日洞察：資料庫交接契約
 
-摘要、API 與前端不應依賴 DynamoDB 的實體表設計。資料庫整併只需替換
-`agent_ui/community_insights.py` 的 repository boundary。
+摘要目前已由 `agent_ui/community_insights.py` 直接支援 DynamoDB；API 與前端
+不依賴實體表設計。本機仍可明確指定 `COMMUNITY_INSIGHTS_STORAGE=json`。
 
 ## 討論資料讀取
 
@@ -16,7 +16,7 @@
 表名可用 `maia_community_insights`：
 
 - PK `scope_key`：`ROOM#<room_id>` 或 `LOBBY`
-- SK `date_key`：`DATE#YYYY-MM-DD`
+- SK `insight_date`：`YYYY-MM-DD`
 - 其他欄位：`headline`、`summary`、`directions`、`disagreements`、`sentiment`、
   `post_count`、`room_count`、`generated_at`、`model`、`prompt_version`
 
@@ -29,6 +29,12 @@
 
 ## 排程
 
-目前單 worker demo 可用 `COMMUNITY_INSIGHTS_AUTO_GENERATE=true`。多 instance
-部署時應關閉它，改由 EventBridge Scheduler 每日觸發一次，並以摘要表的
-PK/SK 或 conditional write 保證只生成一次。
+正式環境設定：
+
+- `COMMUNITY_INSIGHTS_STORAGE=dynamodb`
+- `DYNAMODB_COMMUNITY_INSIGHTS_TABLE=maia_community_insights`
+- `COMMUNITY_INSIGHTS_LOCK_TTL_SECONDS=3600`
+
+同一張表使用 `LOCK#DAILY + 日期` 保存有期限的分散式鎖，避免多個 worker
+同時產生相同日期的摘要。正式排程仍建議由 EventBridge Scheduler 觸發；
+`COMMUNITY_INSIGHTS_AUTO_GENERATE=true` 適合單一常駐 Web worker。

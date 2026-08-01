@@ -1,16 +1,16 @@
 """Daily community insight generation for MAIA discussion spaces.
 
-The generation pipeline is intentionally independent from the persistence
-implementation.  The hackathon build uses an atomic JSON store; the database
-team can replace ``_load_insights`` / ``_save_insights`` without changing the
-Bedrock prompts, API contract, or frontend.
+Production uses DynamoDB so every web instance and scheduled worker sees the
+same summaries. Atomic JSON remains available as a local-development fallback.
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import secrets
 import threading
+import time as wall_time
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -23,6 +23,56 @@ PROMPT_VERSION = "community-daily-v1"
 _STORE = Path(os.getenv("COMMUNITY_INSIGHTS_STORE_PATH", "agent_memory/community_insights.json"))
 _LOCK = threading.Lock()
 _GENERATION_LOCK = threading.Lock()
+_DDB_RESOURCE = None
+
+
+def _storage_mode() -> str:
+    mode = (os.getenv("COMMUNITY_INSIGHTS_STORAGE") or "auto").strip().lower()
+    if mode not in {"auto", "dynamodb", "json"}:
+        raise RuntimeError("COMMUNITY_INSIGHTS_STORAGE must be auto, dynamodb, or json")
+    if mode == "auto":
+        return "dynamodb" if (os.getenv("DYNAMODB_COMMUNITY_INSIGHTS_TABLE") or "").strip() else "json"
+    return mode
+
+
+def _ddb_table():
+    if _storage_mode() != "dynamodb":
+        return None
+    name = (os.getenv("DYNAMODB_COMMUNITY_INSIGHTS_TABLE") or "").strip()
+    if not name:
+        raise RuntimeError("DYNAMODB_COMMUNITY_INSIGHTS_TABLE is required for DynamoDB insight storage")
+    global _DDB_RESOURCE
+    if _DDB_RESOURCE is None:
+        import boto3
+        _DDB_RESOURCE = boto3.resource(
+            "dynamodb",
+            region_name=os.getenv("DYNAMODB_REGION") or os.getenv("AWS_DEFAULT_REGION") or None,
+            endpoint_url=os.getenv("DYNAMODB_ENDPOINT_URL") or None,
+        )
+    return _DDB_RESOURCE.Table(name)
+
+
+def reset_storage_cache() -> None:
+    """Reset the cached boto3 resource after environment changes in tests/tools."""
+    global _DDB_RESOURCE
+    _DDB_RESOURCE = None
+
+
+def _scope_key(scope: str, room_id: str | None = None) -> str:
+    if scope == "lobby" and room_id is None:
+        return "LOBBY"
+    if scope == "room" and room_id:
+        return f"ROOM#{room_id}"
+    raise ValueError("room insights require room_id; lobby insights must not include one")
+
+
+def _public_insight(item: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not item:
+        return None
+    result = dict(item)
+    result.pop("scope_key", None)
+    result.pop("insight_date", None)
+    return result
 
 ROOM_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -93,7 +143,7 @@ def posts_for_day(room_id: str, day: str) -> list[dict[str, Any]]:
     return result
 
 
-def _load_insights() -> list[dict[str, Any]]:
+def _load_json_insights() -> list[dict[str, Any]]:
     if not _STORE.exists():
         return []
     try:
@@ -103,7 +153,7 @@ def _load_insights() -> list[dict[str, Any]]:
         return []
 
 
-def _save_insights(items: list[dict[str, Any]]) -> None:
+def _save_json_insights(items: list[dict[str, Any]]) -> None:
     _STORE.parent.mkdir(parents=True, exist_ok=True)
     temp = _STORE.with_suffix(".tmp")
     temp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -111,21 +161,114 @@ def _save_insights(items: list[dict[str, Any]]) -> None:
 
 
 def save_insight(insight: dict[str, Any]) -> dict[str, Any]:
+    table = _ddb_table()
+    if table:
+        item = dict(insight)
+        item["scope_key"] = _scope_key(str(insight["scope"]), insight.get("room_id"))
+        item["insight_date"] = str(insight["date"])
+        table.put_item(Item=item)
+        return insight
     key = (insight["scope"], insight.get("room_id"), insight["date"])
     with _LOCK:
-        items = _load_insights()
+        items = _load_json_insights()
         items = [item for item in items if (item.get("scope"), item.get("room_id"), item.get("date")) != key]
         items.append(insight)
-        _save_insights(items)
+        _save_json_insights(items)
     return insight
 
 
 def get_insight(scope: str, day: str | None = None, room_id: str | None = None) -> dict[str, Any] | None:
     target_day = normalize_date(day)
+    table = _ddb_table()
+    if table:
+        response = table.get_item(Key={"scope_key": _scope_key(scope, room_id), "insight_date": target_day})
+        return _public_insight(response.get("Item"))
     with _LOCK:
-        return next((item for item in _load_insights()
+        return next((item for item in _load_json_insights()
                      if item.get("scope") == scope and item.get("room_id") == room_id
                      and item.get("date") == target_day), None)
+
+
+def _lock_ttl_seconds() -> int:
+    try:
+        return max(60, min(int(os.getenv("COMMUNITY_INSIGHTS_LOCK_TTL_SECONDS", "3600")), 21600))
+    except ValueError as exc:
+        raise RuntimeError("COMMUNITY_INSIGHTS_LOCK_TTL_SECONDS must be an integer") from exc
+
+
+def _acquire_distributed_lock(day: str) -> str | None:
+    table = _ddb_table()
+    if not table:
+        return "local"
+    from botocore.exceptions import ClientError
+    owner = secrets.token_urlsafe(18)
+    now = int(wall_time.time())
+    try:
+        table.put_item(
+            Item={
+                "scope_key": "LOCK#DAILY",
+                "insight_date": day,
+                "owner": owner,
+                "lock_expires_at": now + _lock_ttl_seconds(),
+            },
+            ConditionExpression="attribute_not_exists(scope_key) OR lock_expires_at < :now",
+            ExpressionAttributeValues={":now": now},
+        )
+        return owner
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return None
+        raise
+
+
+def _release_distributed_lock(day: str, owner: str) -> None:
+    if owner == "local":
+        return
+    table = _ddb_table()
+    if not table:
+        return
+    from botocore.exceptions import ClientError
+    try:
+        table.delete_item(
+            Key={"scope_key": "LOCK#DAILY", "insight_date": day},
+            ConditionExpression="#owner = :owner",
+            ExpressionAttributeNames={"#owner": "owner"},
+            ExpressionAttributeValues={":owner": owner},
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+
+
+def create_table() -> list[str]:
+    """Create the configured DynamoDB community-insight table if needed."""
+    if _storage_mode() != "dynamodb":
+        return []
+    name = (os.getenv("DYNAMODB_COMMUNITY_INSIGHTS_TABLE") or "").strip()
+    if not name:
+        return []
+    from botocore.exceptions import ClientError
+    table = _ddb_table()
+    client = table.meta.client
+    try:
+        client.create_table(
+            TableName=name,
+            KeySchema=[
+                {"AttributeName": "scope_key", "KeyType": "HASH"},
+                {"AttributeName": "insight_date", "KeyType": "RANGE"},
+            ],
+            AttributeDefinitions=[
+                {"AttributeName": "scope_key", "AttributeType": "S"},
+                {"AttributeName": "insight_date", "AttributeType": "S"},
+            ],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        table.wait_until_exists()
+        return [name]
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ResourceInUseException":
+            return []
+        raise
 
 
 def _json_object(content: str) -> dict[str, Any]:
@@ -277,7 +420,11 @@ def generate_daily_insights(day: str | None = None, provider=None, *, force: boo
     target_day = normalize_date(day)
     if not _GENERATION_LOCK.acquire(blocking=False):
         raise RuntimeError("community insight generation is already running")
+    distributed_owner: str | None = None
     try:
+        distributed_owner = _acquire_distributed_lock(target_day)
+        if distributed_owner is None:
+            raise RuntimeError("community insight generation is already running")
         spaces = list_spaces()
         room_insights = []
         for space in spaces:
@@ -299,4 +446,6 @@ def generate_daily_insights(day: str | None = None, provider=None, *, force: boo
             lobby = generate_lobby_insight(room_insights, target_day, provider)
         return {"date": target_day, "rooms": len(room_insights), "lobby": lobby}
     finally:
+        if distributed_owner:
+            _release_distributed_lock(target_day, distributed_owner)
         _GENERATION_LOCK.release()
