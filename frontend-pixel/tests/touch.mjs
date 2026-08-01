@@ -35,7 +35,8 @@ export default async function touch({ browser, ok }) {
   // 觸控沒有 E 鍵：點互動點會走過去並冒出浮動提示，再點提示才開。
   // 提示有上下浮動的動畫，Playwright 的穩定性檢查會一直等它停下來，
   // 所以直接派發事件；真人點擊不受影響。
-  await tapWorld(page, 480, 240);
+  // (648,300) 落在東翼現貨交易台的互動範圍 (592,270,112,60) 裡
+  await tapWorld(page, 648, 300);
   for (let i = 0; i < 30 && !(await page.locator('.world-prompt').isVisible()); i++) {
     await page.waitForTimeout(200);
   }

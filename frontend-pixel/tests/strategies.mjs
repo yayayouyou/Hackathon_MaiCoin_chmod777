@@ -1,20 +1,38 @@
-import { openPage, gotoWorld, waitForPanel } from './lib/harness.mjs';
+import { openPage, gameState, settle, waitForPanel } from './lib/harness.mjs';
 
 /** run.mjs 掃描 tests/*.mjs，套件名字從這裡讀（省略就用檔名）。 */
 export const title = '策略牆';
 
 /**
- * 大廳左側的策略牆：社群分享的做法。
+ * 交易者公會裡的策略牆：社群分享的做法。
  *
  * 這支測的重點不只是「面板打得開」，還有三條**刻意的設計**不能被改掉：
  *   ① 報酬旁邊一定要有回撤與樣本數（只秀報酬是這類看板最常見的誤導）
  *   ② 樣本 < 30 筆要掛警示
  *   ③ 卡片上沒有「跟單」，只有收藏與請 MAIA 分析（合規觀感）
+ *
+ * ⚠ 導航走**功能條**而不是硬編世界座標。
+ *   這裡原本是 `gotoWorld(244,206)` —— 那是策略牆還在大廳左側時的座標，
+ *   它搬進交易者公會之後這支套件就一直斷在第一行（大廳的 244,206 什麼都
+ *   沒有，按 E 不會開任何東西）。功能條的落點跟房間定義是同一組數字、
+ *   而且 tests/zones.mjs 會驗它們對得上，所以走它就不會再被搬家帶走。
  */
 export default async function strategies({ browser, ok }) {
   const page = await openPage(browser);
 
-  await gotoWorld(page, 244, 206);
+  await page.locator('.fslot', { hasText: '策略牆' }).click();
+  for (let i = 0; i < 80; i++) {
+    await page.waitForTimeout(100);
+    if ((await gameState(page)).room.id === 'guild') break;
+  }
+  ok('功能條把人送進交易者公會', (await gameState(page)).room.id === 'guild');
+  await settle(page);
+  // 等導引走完（target 被清成 null）再按 E
+  for (let i = 0; i < 80; i++) {
+    if ((await gameState(page)).target === null) break;
+    await page.waitForTimeout(100);
+  }
+  await page.waitForTimeout(300);
   await page.keyboard.press('KeyE');
   ok('走到策略牆按 E 可開啟', await waitForPanel(page));
   ok('面板標題是策略牆',

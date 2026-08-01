@@ -1,14 +1,15 @@
 import { openPage, gameState, gotoWorld } from './lib/harness.mjs';
 
 /** run.mjs 掃描 tests/*.mjs，套件名字從這裡讀（省略就用檔名）。 */
-export const title = 'MAX 資訊角';
+export const title = '大廳站點';
 
 /**
- * 大廳裡的 MAX 三個站點：公告、活動、MAIA 對話。
+ * 大廳五個功能站點：東翼 MAX 官方區的四個（現貨交易 / 公告 / 活動 / 客服）
+ * 與中庭的 MAIA。
  *
- * 這三個原本在一個叫 maxinfo 的獨立房間裡，要穿過傳送門才到得了。命題單位
- * 就是 MAX，把它的東西放在一進場就看得到的中段右側，比擺一道門值錢 ——
- * 所以那個房間整個併進大廳、傳送門移除。
+ * 這一支同時是「主走道淨空」那條排版規則的驗證：五個站點分散在
+ * x408..884、y320..460，全部用同一個 `openAt()` 走過去按 E。任何一件裝飾
+ * 掉進走道，這裡就會有一條變成「(沒有面板)」—— 因為角色會卡在半路。
  */
 export default async function rooms({ browser, ok }) {
   const page = await openPage(browser);
@@ -24,11 +25,21 @@ export default async function rooms({ browser, ok }) {
     return title;
   };
 
-  await openAt(616, 198, 'MAX 官方消息');
+  // 座標抄自 features/registry.ts 的 place —— 那份跟 makeLobby() 的
+  // 互動範圍是同一組數字，tests/zones.mjs 會驗它們對得上。
+  await openAt(766, 320, 'MAX 官方消息');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
-  await openAt(728, 198, 'MAX 最新活動');
+  await openAt(884, 320, 'MAX 最新活動');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+
+  await openAt(648, 320, 'MAX 現貨交易');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+
+  await openAt(836, 460, 'MAX 官方客服');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
@@ -37,7 +48,7 @@ export default async function rooms({ browser, ok }) {
   //   `#hud-root` 的非模態 dock，所以這裡不能驗 `.panel-head h2` ——
   //   那正是這條斷言在 dock 化之後一直紅著沒人發現的原因。
   //   非模態是刻意的：agent 查工具的那 20–40 秒，世界要繼續跑。
-  await gotoWorld(page, 760, 284);
+  await gotoWorld(page, 408, 320);
   await page.keyboard.press('KeyE');
   await page.waitForTimeout(1200);
   ok('MAIA 開的是非模態 dock 而不是彈窗',
@@ -64,11 +75,19 @@ export default async function rooms({ browser, ok }) {
   await page.locator('.maia-x').click();
   await page.waitForTimeout(500);
 
-  // 三個站點頭上都要有常駐站牌，而且是名詞（「公告」）不是動詞
+  // 五個站點頭上都要有常駐站牌，而且是名詞（「公告」）不是動詞
   // （「讀取官方消息」）—— 遠遠一眼要看得出那是什麼。
   const signs = await page.locator('#world-labels .spot-label').allTextContents();
-  ok('MAX 三個站點都有常駐站牌',
-    ['公告', '活動', 'MAIA'].every((s) => signs.includes(s)), signs.join(' / '));
+  ok('五個站點都有常駐站牌',
+    ['現貨交易', '公告', '活動', '客服', 'MAIA'].every((s) => signs.includes(s)),
+    signs.join(' / '));
+  // MAIA 的站牌是紫色，MAX 那四個是品牌藍。顏色是「這一區不是 MAX 的」
+  // 最快的說明，比距離還快 —— 所以它是一條斷言而不是註解。
+  const maiaAccent = await page
+    .locator('#world-labels .spot-label', { hasText: 'MAIA' })
+    .first()
+    .getAttribute('data-accent');
+  ok('MAIA 站牌用紫色跟 MAX 的藍分開', maiaAccent === 'violet', String(maiaAccent));
   ok('站牌用的是名詞不是動詞', !signs.some((s) => s.includes('讀取') || s.includes('查看')),
     signs.join(' / '));
 

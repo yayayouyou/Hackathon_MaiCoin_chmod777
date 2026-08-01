@@ -33,8 +33,10 @@ export default async function interaction({ browser, ok }) {
   await page.keyboard.up('KeyD');
   ok('WASD 接管後光圈消失', (await gameState(page)).target === null);
 
-  // 走不到的目標（柱子後方）不能讓光圈永遠留著 —— 沒有尋路，角色會頂著牆
-  await clickWorld(page, 852, 130);
+  // 走不到的目標不能讓光圈永遠留著 —— 沒有尋路，角色會頂著牆。
+  // (700,168) 在東翼保管箱牆的碰撞盒 (634,158,144,18) 裡面，也就是員工區：
+  // 走過去會先被代幣柱擋住、再沿著它往北滑，距離停止縮短後放棄。
+  await clickWorld(page, 700, 168);
   await page.waitForTimeout(400);
   const stuckStart = (await gameState(page)).target !== null;
   await page.waitForTimeout(9000);
@@ -49,7 +51,8 @@ export default async function interaction({ browser, ok }) {
   // （下面那幾條驗的就是它）。
   {
     const p2 = await openPage(browser);
-    await clickWorld(p2, 480, 240);
+    // (648,300) 落在東翼現貨交易台的互動範圍 (592,270,112,60) 裡
+    await clickWorld(p2, 648, 300);
     for (let i = 0; i < 30 && !(await promptText(p2)); i++) await p2.waitForTimeout(200);
     ok('點擊互動點會走過去但不自動開啟',
       (await promptText(p2)) !== null && !(await panelVisible(p2)),

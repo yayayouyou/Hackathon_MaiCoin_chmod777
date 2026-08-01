@@ -45,7 +45,7 @@ export default async function featurebar({ browser, ok }) {
   ok('功能條會傳送回大廳', (await gameState(page)).room.id === 'lobby');
   await settle(page);
 
-  // 大廳出生點是 (480,322)，公告站在 (568,198) 一帶。
+  // 大廳出生點是 (480,322)，公告塔的站位在 (766,326)。
   // 壞掉時角色會一直待在出生點 —— 這條斷言就是那個 bug 的照妖鏡。
   const spawn = { x: 480, y: 322 };
   let moved = false;
@@ -59,6 +59,22 @@ export default async function featurebar({ browser, ok }) {
   }
   const end = await gameState(page);
   ok('到站後角色會自己走離出生點', moved, `px=${end.px.toFixed(0)}, py=${end.py.toFixed(0)}`);
+
+  /**
+   * ⚠ 一定要先等**走完**再讀提示。
+   *
+   * 走去公告塔的路上會經過現貨交易台的互動範圍，那一瞬間提示會顯示
+   * 「進行現貨交易」—— 原本這裡是「輪詢到有提示就讀」，於是十次有九次
+   *  讀到的是路過交易台那一下，斷言紅在一個完全正常的行為上。
+   *
+   * `target` 是點擊移動的目標，抵達（或放棄）時由 player.ts 清成 null，
+   * 所以「target 變回 null」就是「這段導引結束了」最準的訊號。
+   */
+  for (let i = 0; i < 80; i++) {
+    if ((await gameState(page)).target === null) break;
+    await page.waitForTimeout(100);
+  }
+  await page.waitForTimeout(300);
 
   // 走到定位就會冒出提示。刻意**不**自動開面板 —— 功能條是導航不是快捷開啟，
   // 世界裡一律走近再按鍵。

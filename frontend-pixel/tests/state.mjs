@@ -42,11 +42,18 @@ export default async function state({ browser, ok }) {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(500);
 
-    // 點在排行看板的互動範圍內：會走過去，站定後按 E 才開
-    // （世界裡一律走近再按鍵，滑鼠點擊不再自動觸發）
-    await gotoWorld(page, 480, 240);
+    /**
+     * 收藏的來源是選房面板的星號。
+     *
+     * 這裡原本走 (480,240) —— 那是「大廳的排行看板」，但排行榜早就搬進
+     * 交易者公會了，那個座標在大廳只會撞到現貨交易台，而交易面板裡
+     * 沒有 `.star`，於是這支套件從那次搬家之後就一直在同一行斷掉。
+     * 改走討論區拱門的選房面板：一樣是收藏房間、一樣寫進 localStorage，
+     * 而且門的座標寫在 zone 的 gateway.pinned 裡，不會再被排版變動帶走。
+     */
+    await gotoWorld(page, 288, 300);
     await page.keyboard.press('KeyE');
-    ok('排行看板可開啟', await waitForPanel(page));
+    ok('選房面板可開啟', await waitForPanel(page));
     await page.locator('.star').first().click();
     await page.waitForTimeout(500);
 
