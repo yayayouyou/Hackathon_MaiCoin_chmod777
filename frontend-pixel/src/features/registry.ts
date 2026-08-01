@@ -114,7 +114,7 @@ export const FEATURES: Feature[] = [
     accent: 'max',
     glyph: 'AI',
     panel: 'agentChat',
-    place: { zone: 'lobby', wx: 760, wy: 284 },
+    place: { zone: 'lobby', wx: 672, wy: 300 },
   },
   // ── 我的帳戶（大廳右下角三站）──
   // place 的座標抄自 rooms.ts 那三個 station 的互動範圍中心

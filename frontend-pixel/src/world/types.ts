@@ -36,7 +36,7 @@ export type Prop =
   | { kind: 'stool'; x: number; y: number }
   | { kind: 'counter'; x: number; y: number; w: number }
   | { kind: 'screenwall'; x: number; y: number; w: number }
-  | { kind: 'robot'; x: number; y: number }
+  | { kind: 'robot'; x: number; y: number; accent?: Accent }
   | { kind: 'plant'; x: number; y: number }
   // ── 大廳的虛擬貨幣主題道具 ──
   /** 牆上的行情跑馬燈 */

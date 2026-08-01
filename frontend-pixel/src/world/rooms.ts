@@ -71,8 +71,9 @@ export function makeLobby(): Room {
     //   （player.ts 的 STALL_GIVE_UP）。所以任何一件擋路的道具橫在出生點與
     //   站點之間，功能條導引就會靜默失敗 —— 人停在半路、提示指向別的東西。
     //   第一版把 MAIA 櫃檯放在 (540,240)，它 124px 寬的碰撞盒剛好橫在出生點
-    //   與兩台終端機中間，三條路徑全斷。現在櫃檯退到右下、兩台終端機在上排，
-    //   三條直線各自淨空。
+    //   與兩台終端機中間，三條路徑全斷。改用只有 20px 寬碰撞盒的懸浮機器人
+    //   道具後，MAIA 縮到兩台終端機正下方 (660,246) 置中，碰撞盒 x662..682
+    //   避開了兩條終端機視線（活動視線在該高度落在 x≤617），三條直線各自淨空。
     station({
       prop: { kind: 'terminal', x: 588, y: 150, accent: 'max' },
       label: '讀取官方消息',
@@ -87,8 +88,11 @@ export function makeLobby(): Room {
       accent: 'max',
       panel: 'maxEvents',
     }),
+    // MAIA 用懸浮機器人道具（會眨眼、天線、MAX 藍光），一眼讀成「AI 助理」，
+    // 而不是先前那條看不出是什麼的金屬櫃檯。置中在兩台終端機正下方，成為
+    // MAX 資訊角的門面；robot 只有 20px 寬碰撞盒，不再像 120px 櫃檯那樣卡位。
     station({
-      prop: { kind: 'counter', x: 700, y: 260, w: 120 },
+      prop: { kind: 'robot', x: 660, y: 246, accent: 'max' },
       label: '與 MAIA 對話',
       sign: 'MAIA',
       accent: 'max',

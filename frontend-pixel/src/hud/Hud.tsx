@@ -1,5 +1,6 @@
 import { useUI } from '../ui/uiStore';
 import { AgentDock } from './blocks/AgentDock';
+import { AnnounceStrip } from './blocks/AnnounceStrip';
 import { FeatureBar } from './blocks/FeatureBar';
 import { ProfilePod } from './blocks/ProfilePod';
 import { TickerStrip } from './blocks/TickerStrip';
@@ -33,6 +34,7 @@ export function Hud() {
   return (
     <>
       <TickerStrip />
+      <AnnounceStrip />
       <ProfilePod />
       <ZoomToggle />
       <FeatureBar />

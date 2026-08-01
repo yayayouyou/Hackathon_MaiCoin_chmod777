@@ -761,6 +761,14 @@ input:focus, textarea:focus { border-color: var(--cyan); }
 }
 .news-item .t { display: block; font-size: 13px; }
 
+/* 公告 / 活動卡片的程序化像素封面：列表縮圖與詳情主視覺共用 PixelCover。
+   封面用 flex 併在文字左側，不動 .news-item 本身的 block 版面與選中樣式。 */
+.news-row { display: flex; gap: 10px; align-items: center; }
+.news-txt { min-width: 0; }
+.news-hero { display: flex; gap: 12px; align-items: center; margin-bottom: 4px; }
+.news-hero-txt { min-width: 0; }
+.news-hero-txt h3 { margin-bottom: 2px; }
+
 article p { margin-bottom: 10px; color: var(--dim); }
 article h3 { font-size: 15px; margin-bottom: 4px; }
 

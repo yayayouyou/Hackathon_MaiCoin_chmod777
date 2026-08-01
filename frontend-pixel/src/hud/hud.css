@@ -146,6 +146,77 @@
     background: linear-gradient(90deg, #080b1200, #080b12 56px);
   }
 
+  /* ── 公告 / 活動跑馬燈（行情列正下方） ───────────────── */
+  /*
+   * 結構與行情列一模一樣（兩份等寬內容 + translateX(-50%) 無縫捲動），
+   * 只是貼在行情列下方（top 吃 --ticker-h）、底色帶一點 MAX 藍以示區別、
+   * 捲速略慢，兩條 bar 才不會像同一條在動。同樣用 id 選擇器提高權重把
+   * pointer-events 打回 none —— 最上面這兩條都不該吃掉往上走時的點擊。
+   */
+  #hud-root > .ann {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--ticker-h, 28px);
+    height: 30px;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    background: #0a1222f2;
+    border-bottom: 2px solid #0a0c12;
+    box-shadow: inset 0 -2px 0 0 #1f3358;
+    pointer-events: none;
+  }
+  .ann-track {
+    display: flex;
+    width: max-content;
+    animation: ann-scroll 46s linear infinite;
+    will-change: transform;
+  }
+  @keyframes ann-scroll {
+    to { transform: translateX(-50%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ann-track { animation: none; }
+  }
+  .ann-row {
+    display: flex;
+    flex: none;
+    min-width: 100vw;
+    justify-content: space-around;
+  }
+  .ann-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 16px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .ann-tag {
+    color: var(--max);
+    letter-spacing: 1px;
+    font-size: 10px;
+    border: 1px solid #2a3f8f;
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+  .ann-title { color: var(--txt); }
+  .ann-meta { color: var(--green); font-family: var(--mono); font-size: 10px; }
+  .ann-badge {
+    position: absolute;
+    right: 0;
+    top: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding: 0 10px 0 56px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--max);
+    background: linear-gradient(90deg, #0a122200, #0a1222 56px);
+  }
+
   /* ── 角色卡（左下） ─────────────────────────────────── */
   .pod {
     position: fixed;
@@ -297,7 +368,7 @@
     /* 不貼齊 0：inset box-shadow 的右邊那道 2px 光環會剛好落在視窗邊界上被
        抹掉，整顆 tab 看起來像沒載完的破圖。留 2px 讓光環四邊都收得起來。 */
     right: 2px;
-    top: calc(50% + var(--ticker-h, 0px) / 2);
+    top: calc(50% + var(--strips-h, var(--ticker-h, 0px)) / 2);
     transform: translateY(-50%);
     display: flex;
     flex-direction: column;
@@ -325,8 +396,9 @@
   .maia-dock {
     position: fixed;
     right: 0;
-    /* 讓出行情條的高度，否則 dock 的標題列會被壓在它底下 */
-    top: var(--ticker-h, 0px);
+    /* 讓出頂部兩條 strip（行情 + 公告活動）的高度，否則 dock 的標題列會被壓在
+       它底下。--strips-h 由 AnnounceStrip 寫入；沒有它時退回只讓行情列。 */
+    top: var(--strips-h, var(--ticker-h, 0px));
     bottom: 0;
     display: flex;
     flex-direction: column;
