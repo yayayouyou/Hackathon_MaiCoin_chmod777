@@ -6,6 +6,9 @@ import { MaxNews, MaxEvents } from './Max';
 import { AgentChat } from './AgentChat';
 import { CharPanel } from './CharPanel';
 import { Strategies } from './Strategies';
+import { Holdings } from './Holdings';
+import { PnlDesk } from './PnlDesk';
+import { Behavior } from './Behavior';
 
 /**
  * ★ 全隊 append 點 2/4。
@@ -27,6 +30,10 @@ export const PANELS = {
   agentChat: definePanel({ id: 'agentChat', title: 'MAIA 對話', Component: AgentChat }),
   char: definePanel({ id: 'char', title: '角色訊息窗', Component: CharPanel }),
   strategies: definePanel({ id: 'strategies', title: '策略牆', Component: Strategies }),
+  // ── 大廳右下角「我的帳戶」三站（資料一律走 MAX API，見 api/account.ts）──
+  holdings: definePanel({ id: 'holdings', title: '我的金庫', Component: Holdings }),
+  pnlDesk: definePanel({ id: 'pnlDesk', title: '損益對帳台', Component: PnlDesk }),
+  behavior: definePanel({ id: 'behavior', title: '交易性格', Component: Behavior }),
 } as const satisfies Record<string, PanelDef>;
 
 export type PanelId = keyof typeof PANELS;

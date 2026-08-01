@@ -116,5 +116,41 @@ export const FEATURES: Feature[] = [
     panel: 'agentChat',
     place: { zone: 'lobby', wx: 760, wy: 284 },
   },
+  // ── 我的帳戶（大廳右下角三站）──
+  // place 的座標抄自 rooms.ts 那三個 station 的互動範圍中心
+  // （`frontOf` = 道具底部往上 26px、往下 60px），三個站位都是 y388。
+  {
+    id: 'holdings',
+    label: '我的金庫',
+    hint: '持倉艙位 · FIFO 成本 · 錢包餘額',
+    keys: 'holdings 持倉 艙位 餘額 資產 position balance wallet vault',
+    group: 'account',
+    accent: 'green',
+    glyph: 'HD',
+    panel: 'holdings',
+    place: { zone: 'lobby', wx: 576, wy: 388 },
+  },
+  {
+    id: 'behavior',
+    label: '交易性格',
+    hint: '行為偏誤 · 風控防線 · AI 記住的偏好',
+    keys: 'behavior 性格 行為 偏誤 風控 guard bias 偏好 traits',
+    group: 'analysis',
+    accent: 'green',
+    glyph: 'BH',
+    panel: 'behavior',
+    place: { zone: 'lobby', wx: 692, wy: 388 },
+  },
+  {
+    id: 'pnlDesk',
+    label: '損益對帳',
+    hint: '已實現損益 · 對帳差異 · 資金流',
+    keys: 'pnl 損益 對帳 資金流 reconcile realized funds 出入金',
+    group: 'account',
+    accent: 'green',
+    glyph: 'PL',
+    panel: 'pnlDesk',
+    place: { zone: 'lobby', wx: 812, wy: 388 },
+  },
   // …隊友各自往下加一筆
 ];

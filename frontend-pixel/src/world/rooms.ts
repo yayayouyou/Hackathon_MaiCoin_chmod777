@@ -115,6 +115,43 @@ export function makeLobby(): Room {
       accent: 'amber',
       panel: 'strategies',
     }),
+
+    // ── 我的帳戶區（右下象限）──
+    //
+    // 右側原本只有「MAX 發布給所有人的東西」（藍）。個人帳戶是第三種來源，
+    // 所以這一排走綠色 —— 與 FEATURES 裡 `group: 'account'` 的既有配色一致。
+    // 讀起來是：右上是交易所給你看的，右下是你自己的。
+    //
+    // ⚠ 三件道具**底邊一律對齊 y384**（vault 56 高、hologram 40、board 48，
+    //   所以 y 各是 328/344/336）。它們的碰撞盒都落在 y366..382，離出生點
+    //   那條 y322 的貫通走道還有 44px —— 走道被擋住的話，從中央往右的
+    //   直線移動會卡住，而這個世界沒有尋路（`walkTo()` 撞牆滑一下、
+    //   0.7 秒沒進展就放棄，見 player.ts 的 STALL_GIVE_UP）。
+    //
+    // ⚠ 從出生點 (480,322) 到三個站位的直線都驗過淨空。最接近的障礙是
+    //   金幣雕像的碰撞盒 `{458,396,44,14}`，而三條線在 x=502 時都還在
+    //   y≤340，從它上方通過。
+    station({
+      prop: { kind: 'vault', x: 548, y: 328 },
+      label: '查看我的持倉',
+      sign: '我的金庫',
+      accent: 'green',
+      panel: 'holdings',
+    }),
+    station({
+      prop: { kind: 'hologram', x: 672, y: 344 },
+      label: '分析我的交易性格',
+      sign: '交易性格',
+      accent: 'green',
+      panel: 'behavior',
+    }),
+    station({
+      prop: { kind: 'board', x: 784, y: 336 },
+      label: '核對損益與帳目',
+      sign: '損益對帳',
+      accent: 'green',
+      panel: 'pnlDesk',
+    }),
   ];
 
   /**
