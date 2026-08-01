@@ -126,7 +126,7 @@ export function RoomPicker() {
               autoFocus
             />
           </div>
-          {player?.role === 'official' && <div className="composer" style={{ marginBottom: 14 }}>
+          {player && <div className="composer" style={{ marginBottom: 14 }}>
             <input value={title} maxLength={120} placeholder="建立新討論區：主題" onChange={(e) => setTitle(e.target.value)} />
             <input value={openingText} maxLength={460} placeholder="首篇內容（最多 460 字，將由 MAIA 官方發為 Threads 根文）" onChange={(e) => setOpeningText(e.target.value)} />
             <button className="btn btn-primary" disabled={creating || !title.trim() || !openingText.trim()} onClick={() => void create()}>

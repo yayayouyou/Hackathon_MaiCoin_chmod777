@@ -934,7 +934,7 @@ def get_discussion_spaces(include_archived: bool = False):
 
 
 @app.post("/api/discussion-spaces")
-def create_discussion_space(req: DiscussionSpaceRequest, username: str = Depends(auth.require_official)):
+def create_discussion_space(req: DiscussionSpaceRequest, username: str = Depends(auth.require_session)):
     if not req.title.strip() or not req.opening_text.strip():
         raise HTTPException(status_code=422, detail="title and opening_text are required")
     try:
