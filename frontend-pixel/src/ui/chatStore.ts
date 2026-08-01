@@ -19,6 +19,8 @@ export type Msg = { id: number; who: 'agent' | 'me'; text: string };
 export type Chip = { id: number; name: string; source: SourceTag; ok: boolean | null };
 /** reader 攔截到疑似指令注入時留下的常駐警示（來源工具 + 命中的旗標名）。 */
 export type ReaderAlert = { id: number; source: string; flags: string[] };
+/** 一張圖表卡：留住 tool_result 的原始 result，交給 ui/vizCards 的 chartSpecFor 決定怎麼畫。 */
+export type ChartItem = { id: number; tool: string; result: unknown };
 
 export type ChatState = {
   msgs: Msg[];
@@ -27,6 +29,7 @@ export type ChatState = {
   busy: boolean;
   approval: { summary: string; hash: string } | null;
   readerAlerts: ReaderAlert[];
+  charts: ChartItem[];
 };
 
 const GREETING: Msg = {
@@ -42,6 +45,7 @@ let state: ChatState = {
   busy: false,
   approval: null,
   readerAlerts: [],
+  charts: [],
 };
 
 const subs = new Set<() => void>();
@@ -107,6 +111,19 @@ export const toolLabel = (n: string): string => TOOLS[n]?.label ?? n;
 export const toolSource = (n: string): SourceTag => TOOLS[n]?.source ?? 'local';
 
 /**
+ * 會產生「圖表卡」的工具（第一層：零相依 CSS/SVG 卡）。
+ * 收到這些工具的 tool_result 時，把 result 留下來（過去這裡整包丟掉）；
+ * 實際怎麼畫由 ui/vizCards 的 chartSpecFor(tool, result) 決定。
+ */
+const CHARTABLE_TOOLS = new Set<string>([
+  'get_crypto_fear_and_greed_index',
+  'get_max_depth',
+  'get_max_accounts',
+  'get_trading_dna_score',
+  'analyze_trading_behavior',
+]);
+
+/**
  * 工具是否失敗。後端執行失敗時 tool_result 的 result 會是 `{ error: ... }`
  * （見 agent/ollama_agent.py:303,315）。過去前端一律當成功、把失敗吞掉。
  */
@@ -166,6 +183,7 @@ export async function ask(question: string, model?: string): Promise<void> {
     status: '',
     approval: null,
     readerAlerts: [],
+    charts: [],
     busy: true,
   });
   pushHud('thinking', '讀題中…');
@@ -189,12 +207,20 @@ export async function ask(question: string, model?: string): Promise<void> {
         pushHud('tool', toolLabel(e.name));
         break;
       case 'tool_result': {
+        const ok = !toolFailed(e.result);
+        const patch: Partial<ChatState> = {};
         const i = state.chips.findIndex((x) => x.name === e.name && x.ok === null);
-        if (i < 0) break;
-        const next = [...state.chips];
-        // 讀 result.error 決定 ✓/✗，別再把工具失敗一律當成功吞掉
-        next[i] = { ...next[i]!, ok: !toolFailed(e.result) };
-        emit({ chips: next });
+        if (i >= 0) {
+          const next = [...state.chips];
+          // 讀 result.error 決定 ✓/✗，別再把工具失敗一律當成功吞掉
+          next[i] = { ...next[i]!, ok };
+          patch.chips = next;
+        }
+        // 成功且是可畫圖的工具 → 留下 result 給圖表卡（過去這裡把 result 整包丟掉）
+        if (ok && CHARTABLE_TOOLS.has(e.name) && e.result != null) {
+          patch.charts = [...state.charts, { id: state.charts.length, tool: e.name, result: e.result }];
+        }
+        if (Object.keys(patch).length > 0) emit(patch);
         pushHud('tool', toolLabel(e.name));
         break;
       }
@@ -275,7 +301,7 @@ export function newConversation(): void {
   cancel();
   currentSessionId = newSessionId();
   setLive('');
-  emit({ msgs: [GREETING], chips: [], status: '', approval: null, readerAlerts: [], busy: false });
+  emit({ msgs: [GREETING], chips: [], status: '', approval: null, readerAlerts: [], charts: [], busy: false });
 }
 
 /**
@@ -295,5 +321,5 @@ export async function loadSessionInto(id: string): Promise<void> {
   }
   currentSessionId = id;
   setLive('');
-  emit({ msgs, chips: [], status: '', approval: null, readerAlerts: [], busy: false });
+  emit({ msgs, chips: [], status: '', approval: null, readerAlerts: [], charts: [], busy: false });
 }

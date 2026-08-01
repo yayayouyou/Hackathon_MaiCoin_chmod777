@@ -510,6 +510,63 @@
   }
   .maia-reader strong { color: var(--rose); }
 
+  /* ── 圖表卡（ui/vizCards）：直角硬邊、左邊框依資料來源上色 ───── */
+  .viz-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .maia-viz {
+    padding: 8px 10px;
+    background: #0b0f18;
+    border: 1px solid #1e2635;
+    border-radius: 0;
+  }
+  .maia-viz[data-src='max']    { box-shadow: inset 2px 0 0 var(--max); }
+  .maia-viz[data-src='dna']    { box-shadow: inset 2px 0 0 var(--violet); }
+  .maia-viz[data-src='market'] { box-shadow: inset 2px 0 0 var(--cyan); }
+  .maia-viz[data-src='news']   { box-shadow: inset 2px 0 0 var(--amber); }
+
+  .viz-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; }
+  .viz-eyebrow {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 1px;
+    color: var(--dim); text-transform: uppercase;
+  }
+  .viz-title {
+    flex: 1; font-size: 12px; font-weight: 600; color: var(--txt);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .viz-tag { font-family: var(--mono); font-size: 9px; color: var(--dim); }
+  .viz-empty { font-size: 11px; color: var(--dim); padding: 4px 0; }
+
+  /* 恐懼貪婪半圓儀表 */
+  .viz-gauge { display: flex; flex-direction: column; align-items: center; }
+  .viz-gauge-svg { width: 100%; max-width: 220px; height: auto; }
+  .viz-gauge-num { font-family: var(--mono); font-size: 30px; font-weight: 700; }
+  .viz-gauge-label { font-size: 12px; font-weight: 600; margin-top: -4px; }
+  .viz-legend { display: flex; flex-wrap: wrap; gap: 4px 8px; justify-content: center; margin-top: 6px; }
+  .viz-legend-item {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 9px; color: var(--dim); opacity: 0.55;
+  }
+  .viz-legend-item[data-on='1'] { opacity: 1; color: var(--txt); }
+  .viz-swatch { width: 8px; height: 8px; display: inline-block; }
+
+  /* 訂單簿深度條 */
+  .viz-ob { display: flex; flex-direction: column; gap: 1px; }
+  .viz-ob-row {
+    position: relative; display: flex; justify-content: space-between; align-items: center;
+    padding: 2px 4px; font-family: var(--mono); font-size: 11px;
+  }
+  .viz-ob-bar { position: absolute; right: 0; top: 0; bottom: 0; z-index: 0; }
+  .viz-ob-row.ask .viz-ob-bar { background: var(--rose); opacity: 0.18; }
+  .viz-ob-row.bid .viz-ob-bar { background: var(--green); opacity: 0.18; }
+  .viz-ob-price { position: relative; z-index: 1; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .viz-ob-row.ask .viz-ob-price { color: var(--rose); }
+  .viz-ob-row.bid .viz-ob-price { color: var(--green); }
+  .viz-ob-vol { position: relative; z-index: 1; color: var(--dim); }
+  .viz-ob-spread {
+    display: flex; justify-content: space-between; padding: 3px 4px; margin: 1px 0;
+    border-top: 1px dashed #1e2635; border-bottom: 1px dashed #1e2635;
+    font-family: var(--mono); font-size: 10px; color: var(--dim);
+  }
+
   /* 直立手機：dock 改成整片蓋上來，功能條讓出高度給它 */
   @media (max-width: 560px) {
     .maia-dock { width: 100% !important; }

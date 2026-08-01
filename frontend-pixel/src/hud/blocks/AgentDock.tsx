@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { setViewInset } from '../../engine/viewport';
-import { ask, loadSessionInto, newConversation, subscribeLive, toolLabel, useChat } from '../../ui/chatStore';
+import {
+  ask,
+  loadSessionInto,
+  newConversation,
+  subscribeLive,
+  toolLabel,
+  toolSource,
+  useChat,
+} from '../../ui/chatStore';
 import { renderMarkdown } from '../../ui/markdown';
+import { chartSpecFor } from '../../ui/vizCards';
 import { listSessions, type SessionSummary } from '../../api/agent';
 import { closeChatDock, openChatDock, useDock } from '../dockStore';
 
@@ -76,7 +85,7 @@ function Elapsed({ busy }: { busy: boolean }) {
 
 export function AgentDock() {
   const { chat: open } = useDock();
-  const { msgs, chips, status, busy, approval, readerAlerts } = useChat();
+  const { msgs, chips, status, busy, approval, readerAlerts, charts } = useChat();
   const [text, setText] = useState('');
   // 選到的模型記在 localStorage，重整/收合再開都還在。無痕模式讀寫失敗就退回預設。
   const [model, setModel] = useState<string>(() => {
@@ -299,6 +308,19 @@ export function AgentDock() {
                 {toolLabel(c.name)}
               </span>
             ))}
+          </div>
+        )}
+
+        {charts.length > 0 && (
+          <div className="viz-list" data-testid="viz-list">
+            {charts.map((c) => {
+              const node = chartSpecFor(c.tool, c.result);
+              return node ? (
+                <div key={c.id} className="maia-viz" data-src={toolSource(c.tool)}>
+                  {node}
+                </div>
+              ) : null;
+            })}
           </div>
         )}
 
