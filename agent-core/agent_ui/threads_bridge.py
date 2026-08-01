@@ -172,7 +172,11 @@ def create_space(title: str, creator: str, opening_text: str) -> dict[str, Any]:
         "thread_root_id": None, "parent_post_id": None, "threads_parent_id": None, "kind": "topic",
     }
     _upsert(room_id, root)
+    # Keep the discussion root separate from the MAIA-owned post used for
+    # administrative deletion.  They happen to be the same for a room made
+    # in MAIA, but differ for a room imported from a Threads mention.
     space["threads_root_id"] = root["threads_id"]
+    space["discussion_root_threads_id"] = root["threads_id"]
     with _LOCK:
         spaces = _load_spaces()
         spaces.append(space)
@@ -216,6 +220,10 @@ def delete_threads_root(room_id: str) -> dict[str, Any]:
 
 
 def list_posts(room_id: str) -> list[dict[str, Any]]:
+    # Also repair legacy records when the room is opened.  This is a no-op once
+    # the links are correct and lets old, flat MAIA views recover without a
+    # manual database migration.
+    _reconcile_parent_links(room_id)
     with _LOCK:
         return sorted(_load().get(room_id, []), key=lambda post: str(post.get("created_at") or ""))
 
@@ -232,6 +240,41 @@ def _upsert(room_id: str, post: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         posts.append(post)
         _save(store)
         return post, True
+
+
+def _reconcile_parent_links(room_id: str) -> int:
+    """Repair parent ids once all pages of a Threads conversation are present.
+
+    Threads may return a child before its parent.  Persisting a missing parent
+    at import time made the MAIA view permanently flat because later syncs
+    deduplicated that child.  Resolve links from the durable Threads ids after
+    every import instead.
+    """
+    with _LOCK:
+        store = _load()
+        posts = store.get(room_id, [])
+        by_threads_id = {str(post.get("threads_id")): post for post in posts if post.get("threads_id")}
+        changed = 0
+        for post in posts:
+            parent_threads_id = str(post.get("threads_parent_id") or "")
+            parent = by_threads_id.get(parent_threads_id)
+            # The acknowledgement created for a mentioned post is hidden in
+            # MAIA.  Its children must therefore attach to the first visible
+            # ancestor, otherwise the UI has no parent to render.
+            seen_parent_ids: set[str] = set()
+            while parent and parent.get("kind") == "bridge":
+                parent_id = str(parent.get("threads_id") or "")
+                if not parent_id or parent_id in seen_parent_ids:
+                    parent = None
+                    break
+                seen_parent_ids.add(parent_id)
+                parent = by_threads_id.get(str(parent.get("threads_parent_id") or ""))
+            if parent and parent is not post and post.get("parent_post_id") != parent.get("id"):
+                post["parent_post_id"] = parent["id"]
+                changed += 1
+        if changed:
+            _save(store)
+        return changed
 
 
 def _token() -> str:
@@ -303,26 +346,37 @@ def publish_platform_post(author: str, text: str, reply_to_id: str | None = None
 def create_platform_post(room_id: str, author: str, text: str, publish: bool = True, parent_post_id: str | None = None) -> dict[str, Any]:
     # One MAIA discussion room maps to one Threads root post.  Every later
     # platform message becomes a reply under that root, never a new root post.
-    _require_active_space(room_id)
+    space = _require_active_space(room_id)
     existing = list_posts(room_id)
     root = next((p for p in existing if p.get("is_thread_root") and p.get("threads_id")), None)
     parent = next((p for p in existing if p.get("id") == parent_post_id), None)
-    if not root:
+    discussion_root_id = str(
+        space.get("discussion_root_threads_id")
+        or space.get("source_threads_id")  # compatibility with rooms imported before this field existed
+        or (root or {}).get("threads_id")
+        or ""
+    )
+    if not discussion_root_id:
         raise RuntimeError("discussion space has no official Threads root")
     if parent_post_id and not parent:
         raise RuntimeError("reply target was not found in this discussion space")
     if parent and publish and not parent.get("threads_id"):
         raise RuntimeError("reply target has not been published to Threads")
+    effective_parent = parent or next((p for p in existing if p.get("threads_id") == discussion_root_id), None)
     post: dict[str, Any] = {
         "id": f"platform-{secrets.token_urlsafe(8)}", "room_id": room_id,
         "author": author[:60], "text": text, "source": "platform",
         "source_author": author[:60], "created_at": _now(), "threads_id": None,
         "permalink": None, "sync_state": "local", "is_thread_root": False,
-        "thread_root_id": root.get("threads_id"),
-        "parent_post_id": parent_post_id, "threads_parent_id": parent.get("threads_id") if parent else None,
+        "thread_root_id": discussion_root_id,
+        # An untargeted MAIA message is a direct reply to the actual discussion
+        # root.  For mention-imported rooms this is the user's original post,
+        # not MAIA's automated "synced" acknowledgement.
+        "parent_post_id": effective_parent.get("id") if effective_parent else parent_post_id,
+        "threads_parent_id": effective_parent.get("threads_id") if effective_parent else discussion_root_id,
     }
     if publish:
-        remote = publish_platform_post(post["author"], post["text"], post["threads_parent_id"] or post["thread_root_id"])
+        remote = publish_platform_post(post["author"], post["text"], post["threads_parent_id"])
         post.update(remote)
         post["sync_state"] = "published"
     return _upsert(room_id, post)[0]
@@ -355,26 +409,35 @@ def _external_post(item: dict[str, Any], room_id: str, kind: str) -> dict[str, A
 
 def sync_threads(room_id: str, limit: int = 50) -> dict[str, int]:
     """Import mentions plus replies under official posts, deduplicated by id."""
-    _require_active_space(room_id)
+    space = _require_active_space(room_id)
     fields = "id,text,username,timestamp,permalink,root_post,replied_to"
     # New @MAIA posts belong to their own spaces and are handled only by
     # sync_mentions_to_spaces().  A room-level sync must never mix them here.
     imported_mentions = imported_replies = reply_errors = mention_errors = 0
 
-    # Only query posts published by MAIA; this is the API-supported, reliable
-    # branch for complete reply synchronization.
-    known = [p for p in list_posts(room_id) if p.get("source") == "platform" and p.get("is_thread_root") and p.get("threads_id")]
-    for post in known:
+    # A locally created room is rooted at MAIA's post.  A room created from a
+    # mention is rooted at the original Threads post, while MAIA's automated
+    # acknowledgement is merely one child.  Query the real discussion root in
+    # both cases, otherwise direct replies are attached to the acknowledgement.
+    root_id = str(
+        space.get("discussion_root_threads_id")
+        or space.get("source_threads_id")  # compatibility with older imported rooms
+        or space.get("threads_root_id")
+        or ""
+    )
+    if not root_id:
+        raise RuntimeError("discussion space has no Threads discussion root")
+    for threads_root_id in [root_id]:
         try:
             replies = _get_all_pages(
-                f"/{post['threads_id']}/conversation",
+                f"/{threads_root_id}/conversation",
                 fields=fields,
                 page_size=limit,
                 extra_params={"reverse": "false"},
             )
         except RuntimeError:
             try:
-                replies = _get_all_pages(f"/{post['threads_id']}/replies", fields=fields, page_size=limit)
+                replies = _get_all_pages(f"/{threads_root_id}/replies", fields=fields, page_size=limit)
             except RuntimeError:
                 reply_errors += 1
                 continue
@@ -385,6 +448,7 @@ def sync_threads(room_id: str, limit: int = 50) -> dict[str, int]:
                 imported["parent_post_id"] = parent.get("id")
             _, added = _upsert(room_id, imported)
             imported_replies += int(added)
+    _reconcile_parent_links(room_id)
     return {"mentions": imported_mentions, "replies": imported_replies, "mention_errors": mention_errors, "reply_errors": reply_errors}
 
 
@@ -422,11 +486,16 @@ def _sync_mentions_to_spaces(limit: int = 50) -> dict[str, int]:
         room_id = f"mention-{secrets.token_urlsafe(6)}"
         bridge = publish_platform_post("MAIA 官方帳號", "此討論已同步至 MAIA 平台；可直接回覆本串。", source_id)
         root = {"id": f"platform-{secrets.token_urlsafe(8)}", "room_id": room_id, "author": "MAIA 官方帳號", "source_author": "MAIA 官方帳號", "text": "此討論已同步至 MAIA 平台；可直接回覆本串。", "source": "platform", "created_at": _now(), "threads_id": bridge["threads_id"], "is_thread_root": True, "thread_root_id": None, "sync_state": "published", "kind": "bridge"}
+        # This automated acknowledgement is a child of the mentioned post;
+        # it is not the root users should reply to.
+        root["threads_parent_id"] = source_id
         _upsert(room_id, root)
-        _upsert(room_id, _external_post(item, room_id, "mention"))
+        source = _external_post(item, room_id, "mention")
+        source.update({"is_thread_root": True, "thread_root_id": source_id})
+        _upsert(room_id, source)
         with _LOCK:
             spaces = _load_spaces()
-            spaces.append({"id": room_id, "title": title_match.group(1)[:120], "creator": item.get("username") or "Threads user", "created_at": _now(), "archived": False, "threads_root_id": bridge["threads_id"], "source_threads_id": source_id, "source_permalink": item.get("permalink")})
+            spaces.append({"id": room_id, "title": title_match.group(1)[:120], "creator": item.get("username") or "Threads user", "created_at": _now(), "archived": False, "threads_root_id": bridge["threads_id"], "discussion_root_threads_id": source_id, "source_threads_id": source_id, "source_permalink": item.get("permalink")})
             _save_spaces(spaces)
         created += 1
     return {"created": created, "skipped": skipped, "stale": stale, "errors": 0, "busy": 0}
