@@ -20,10 +20,10 @@ export function AgentReport() {
   const [tab, setTab] = useState<Tab>('summary');
 
   return (
-    <Panel title={`昨日社群摘要 · ${roomTitle}`} accent="violet" size="md">
+    <Panel title={`今日社群摘要 · ${roomTitle}`} accent="violet" size="md">
       <AsyncState loading={insightLoading} error={insightError} onRetry={reloadInsight} />
       {!insightLoading && !insightError && !dailyInsight && (
-        <p className="muted" style={{ marginBottom: 16 }}>這個討論區昨日尚無可用摘要。</p>
+        <p className="muted" style={{ marginBottom: 16 }}>這個討論區今日尚無可用摘要。</p>
       )}
       {dailyInsight && <CommunityInsightCard insight={dailyInsight} />}
 

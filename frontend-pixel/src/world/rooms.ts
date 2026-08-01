@@ -304,7 +304,7 @@ export function makeLobby(): Room {
   // all-room community brief.  It already has a clear visual presence, so the
   // feature does not add another solid object or disturb existing walk paths.
   const communityBriefBoard: Interactable = {
-    label: '查看昨日全站社群焦點',
+    label: '查看今日全站社群焦點',
     panel: 'communityBrief',
     rect: { x: 352, y: 94, w: 160, h: 70 },
   };
@@ -419,8 +419,8 @@ export function makeDiscussionRoom(spec: DiscussionSpec): Room {
   const stations = [
     station({
       prop: { kind: 'terminal', x: 128, y: 210, accent },
-      label: '查看昨日社群摘要',
-      sign: '昨日摘要',
+      label: '查看今日社群摘要',
+      sign: '今日摘要',
       panel: 'agentReport',
     }),
     station({

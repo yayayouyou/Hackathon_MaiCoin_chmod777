@@ -7,11 +7,11 @@ export function CommunityBrief() {
   const { data, loading, error, reload } = useAsync(() => getLobbyCommunityInsight(), []);
 
   return (
-    <Panel title="昨日全站社群焦點" accent="violet" size="md">
+    <Panel title="今日全站社群焦點" accent="violet" size="md">
       <AsyncState loading={loading} error={error} onRetry={reload} />
       {!loading && !error && !data && (
         <div className="state">
-          <p>昨日摘要尚未產生。</p>
+          <p>今日摘要尚未產生。</p>
           <p className="muted" style={{ fontSize: 12 }}>官方帳號可在社群管理頁手動產生。</p>
         </div>
       )}

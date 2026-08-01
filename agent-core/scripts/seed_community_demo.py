@@ -6,7 +6,7 @@ author and comment is fictional. With ``--publish-threads`` the same hierarchy
 is published through MAIA's official Threads account and the remote ids are
 saved back to DynamoDB.
 
-Preview (defaults to today's Taipei date, ideal for tomorrow's "yesterday" demo):
+Preview (defaults to today's Taipei date for the live "today" demo):
     python scripts/seed_community_demo.py
 
 Write the records and generate summaries:

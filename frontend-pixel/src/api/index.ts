@@ -211,7 +211,7 @@ export async function generateCommunityInsights(): Promise<{ date: string; rooms
   const response = await fetch('/api/admin/community-insights/generate', {
     method: 'POST', credentials: 'same-origin', headers: bridgeHeaders(),
   });
-  if (!response.ok) await throwBridgeError(response, '昨日社群洞察產生失敗');
+  if (!response.ok) await throwBridgeError(response, '今日社群洞察產生失敗');
   return response.json() as Promise<{ date: string; rooms: number }>;
 }
 

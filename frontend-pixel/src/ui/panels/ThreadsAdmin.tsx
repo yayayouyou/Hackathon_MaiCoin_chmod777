@@ -43,7 +43,7 @@ export function ThreadsAdmin() {
     <p className="muted" style={{ fontSize: 12 }}>官方專用。一般封存不會刪 Threads；此頁的刪除不可復原。</p>
     <button className="btn btn-primary" disabled={syncing} onClick={() => void syncMentions()}>{syncing ? '同步中…' : '同步 @MAIA 新話題'}</button>
     <button className="btn" style={{ marginLeft: 8 }} disabled={generatingInsights} onClick={() => void generateInsights()}>
-      {generatingInsights ? '整理昨日討論中…' : '產生昨日社群洞察'}
+      {generatingInsights ? '整理今日討論中…' : '產生今日社群洞察'}
     </button>
     {message && <p className="muted" style={{ fontSize: 12 }}>{message}</p>}
     <AsyncState loading={loading} error={error} onRetry={reload} />

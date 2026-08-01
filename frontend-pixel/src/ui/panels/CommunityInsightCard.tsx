@@ -22,7 +22,7 @@ export function CommunityInsightCard({ insight, compact = false }: { insight: Co
         </p>
       )}
       <p className="muted" style={{ fontSize: 11, marginTop: 10 }}>
-        根據昨日 {insight.post_count} 則討論整理 · 社群觀點，不構成投資建議
+        根據今日 {insight.post_count} 則討論整理 · 社群觀點，不構成投資建議
       </p>
     </section>
   );

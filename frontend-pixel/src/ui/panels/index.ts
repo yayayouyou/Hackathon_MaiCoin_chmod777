@@ -24,7 +24,7 @@ import { CommunityBrief } from './CommunityBrief';
 export const PANELS = {
   ranking: definePanel({ id: 'ranking', title: '熱門排行', Component: RankingBoard }),
   roomPicker: definePanel({ id: 'roomPicker', title: '選擇討論室', Component: RoomPicker }),
-  agentReport: definePanel({ id: 'agentReport', title: '昨日社群摘要', Component: AgentReport }),
+  agentReport: definePanel({ id: 'agentReport', title: '今日社群摘要', Component: AgentReport }),
   thread: definePanel({ id: 'thread', title: '玩家討論串', Component: Thread }),
   maxNews: definePanel({ id: 'maxNews', title: 'MAX 官方消息', Component: MaxNews }),
   maxEvents: definePanel({ id: 'maxEvents', title: 'MAX 最新活動', Component: MaxEvents }),
@@ -38,7 +38,7 @@ export const PANELS = {
   holdings: definePanel({ id: 'holdings', title: '我的金庫', Component: Holdings }),
   pnlDesk: definePanel({ id: 'pnlDesk', title: '損益對帳台', Component: PnlDesk }),
   behavior: definePanel({ id: 'behavior', title: '交易性格', Component: Behavior }),
-  communityBrief: definePanel({ id: 'communityBrief', title: '昨日全站社群焦點', Component: CommunityBrief }),
+  communityBrief: definePanel({ id: 'communityBrief', title: '今日全站社群焦點', Component: CommunityBrief }),
 } as const satisfies Record<string, PanelDef>;
 
 export type PanelId = keyof typeof PANELS;

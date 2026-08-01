@@ -97,15 +97,15 @@ def _threads_auto_sync_loop() -> None:
 
 
 def _community_insights_auto_loop() -> None:
-    """Generate the previous Taipei day's insight once, retrying after failures."""
+    """Keep the current Taipei day's insight fresh, retrying after failures."""
     interval = _community_insights_check_interval()
     while not _INSIGHTS_STOP.is_set():
         try:
-            from agent_ui.community_insights import generate_daily_insights, yesterday_taipei
+            from agent_ui.community_insights import generate_daily_insights, today_taipei
             # The generator compares source counts and is a no-op when nothing
             # changed.  This also repairs the startup race where a Threads sync
             # finishes just after an initially empty daily insight was stored.
-            generate_daily_insights(yesterday_taipei())
+            generate_daily_insights(today_taipei())
         except Exception:
             logger.exception("Community insight generation failed; will retry later")
         if _INSIGHTS_STOP.wait(interval):
