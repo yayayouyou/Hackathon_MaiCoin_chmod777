@@ -420,7 +420,10 @@ def _create_max_order_raw(
 ) -> Dict[str, Any]:
     """
     執行 MAX 現貨下單請求 (無風控校驗，底層使用，由 order_executor 包裝)。
-    v3 端點：POST /api/v3/wallet/spot/orders
+    v3 端點：POST /api/v3/wallet/spot/order（**單數**）。
+    ⚠ 複數 /api/v3/wallet/spot/orders 只用於 GET 清單（/open、/history）與
+      DELETE 全撤；對它 POST 會被 MAX 以 404「Resource not found」退件、實際
+      沒下到單。這條路在 paper 模式不會打 MAX，直到走實盤才會踩到。
     """
     market_id = _normalize_market_id(market)
     params: Dict[str, Any] = {
@@ -437,7 +440,7 @@ def _create_max_order_raw(
     if client_oid:
         params["client_oid"] = client_oid
 
-    return _max_private_request("/api/v3/wallet/spot/orders", params, method="POST")
+    return _max_private_request("/api/v3/wallet/spot/order", params, method="POST")
 
 def _cancel_max_order_raw(order_id: Optional[int] = None, client_oid: Optional[str] = None) -> Dict[str, Any]:
     """

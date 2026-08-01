@@ -9,6 +9,7 @@ import { useAsync } from '../useAsync';
 import { AsyncState } from '../Panel';
 import { PriceChart } from './PriceChart';
 import { OrderBook } from './OrderBook';
+import { OpenOrders } from './OpenOrders';
 
 /**
  * 現貨交易。CharPanel 的「交易」分頁，不是獨立面板。
@@ -80,6 +81,7 @@ function seedPrice(type: OrdType, side: 'buy' | 'sell', m: MarketRow): string {
 const RIGHT_TABS = [
   { id: 'chart', label: '價格圖' },
   { id: 'book', label: '訂單簿' },
+  { id: 'orders', label: '我的掛單' },
   { id: 'balance', label: '餘額' },
 ] as const;
 type RightTab = (typeof RIGHT_TABS)[number]['id'];
@@ -170,7 +172,13 @@ export function Trade() {
         ) : !hasAccount ? (
           <AccountGate detail={dash.data?.account_error} />
         ) : sel ? (
-          <OrderForm market={sel} balances={balances} onDone={dash.reload} pickedPrice={pickedPrice} />
+          <OrderForm
+            market={sel}
+            balances={balances}
+            onDone={dash.reload}
+            onPlaced={() => setRightTab('orders')}
+            pickedPrice={pickedPrice}
+          />
         ) : (
           <div className="empty">請先選擇交易對</div>
         )}
@@ -195,6 +203,7 @@ export function Trade() {
             onPickPrice={(p) => setPickedPrice({ price: p, n: Date.now() })}
           />
         )}
+        {rightTab === 'orders' && sel && <OpenOrders market={sel.id} />}
         {rightTab === 'balance' && <Balances state={dash} />}
         {!sel && rightTab !== 'balance' && <div className="empty">請先選擇交易對</div>}
       </div>
@@ -313,11 +322,14 @@ function OrderForm({
   market,
   balances,
   onDone,
+  onPlaced,
   pickedPrice,
 }: {
   market: MarketRow;
   balances: Balance[];
   onDone: () => void;
+  /** 送出成功且該筆會掛在簿上等成交時呼叫 —— 用來把右欄自動切到「我的掛單」。 */
+  onPlaced: () => void;
   /** 從訂單簿點來的價格。nonce 讓連點同一檔也會生效。 */
   pickedPrice: { price: number; n: number } | null;
 }) {
@@ -403,11 +415,14 @@ function OrderForm({
     return (
       <ConfirmOrder
         preview={preview}
-        onSent={(msg) => {
+        onSent={(msg, restsOnBook) => {
           setPreview(null);
           setVolume('');
-          setToast({ text: msg, err: false });
+          setToast({ text: `✅ 成功下單 · ${msg}`, err: false });
           onDone();
+          // 市價單當下就吃掉、不會停在簿上，切去「我的掛單」只會看到空的；
+          // 只有限價／只掛單這種會掛著等成交的才把右欄自動帶過去。
+          if (restsOnBook) onPlaced();
         }}
         onCancel={(msg) => {
           setPreview(null);
@@ -544,7 +559,8 @@ function ConfirmOrder({
   onCancel,
 }: {
   preview: OrderPreview;
-  onSent: (msg: string) => void;
+  /** restsOnBook：這筆是否會掛在訂單簿上等成交（限價／只掛單為真、市價為假）。 */
+  onSent: (msg: string, restsOnBook: boolean) => void;
   onCancel: (msg?: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -566,7 +582,7 @@ function ConfirmOrder({
     setErr(null);
     const r = await approveOrder(preview.token);
     setBusy(false);
-    if (r.ok) onSent(r.detail);
+    if (r.ok) onSent(r.detail, p.ord_type !== 'market');
     else setErr(r.detail);
   };
 

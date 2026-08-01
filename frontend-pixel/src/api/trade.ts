@@ -175,6 +175,54 @@ export async function getOrderbook(market: string, limit = 14, signal?: AbortSig
   return { bids, asks };
 }
 
+// ── 我的掛單（目前下單中）──────────────────────────────────
+
+/**
+ * 帳戶目前掛在 MAX 上、還沒成交的委託。post_only／限價送出後會停在 `wait`
+ * 狀態等成交 —— 這就是下單面板「我的掛單」分頁要顯示的「目前下單中的數據」。
+ */
+export type OpenOrder = {
+  id: number | string;
+  market: string;
+  side: 'buy' | 'sell' | string;
+  ord_type: string;
+  /** 委託價；市價單成交前沒有價格會是 null */
+  price: number | null;
+  avg_price?: number | null;
+  volume: number;
+  remaining_volume: number;
+  executed_volume: number;
+  state: string;
+  /** MAX 回的建立時間（毫秒） */
+  created_at?: number | null;
+};
+
+/**
+ * 目前掛單中的訂單。唯讀 —— 這一支不會下單也不會撤單。
+ *
+ * `?fast=1` 回一組固定樣本，讓離線示範也看得到「掛單中」長什麼樣。
+ */
+export async function getOpenOrders(market = '', signal?: AbortSignal): Promise<OpenOrder[]> {
+  failIfFlagged();
+  if (FLAGS.fast) {
+    return [
+      {
+        id: 'demo-1', market: 'btctwd', side: 'buy', ord_type: 'post_only',
+        price: 2_038_000, avg_price: null, volume: 0.001, remaining_volume: 0.001,
+        executed_volume: 0, state: 'wait', created_at: Date.now() - 62_000,
+      },
+    ];
+  }
+  const res = await fetch(`/api/orders${market ? `?market=${encodeURIComponent(market)}` : ''}`, {
+    signal: signal ?? null,
+  });
+  if (!res.ok) throw new Error(`後端回應 ${res.status}`);
+  const body = (await res.json()) as { orders?: OpenOrder[]; error?: string };
+  // 缺金鑰/打不到 MAX 時後端回「200 + error」，只看 res.ok 會把失敗當成空清單
+  if (body.error) throw new Error(body.error);
+  return body.orders ?? [];
+}
+
 export type OrdType = 'limit' | 'market' | 'post_only';
 
 export async function previewOrder(

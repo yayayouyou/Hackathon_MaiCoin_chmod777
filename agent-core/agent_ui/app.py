@@ -1434,6 +1434,45 @@ def reject_order(req: OrderApprovalRequest, _: None = Depends(_require_approval_
     return ta.reject(req.token)
 
 
+@app.get("/api/orders", dependencies=[Depends(auth.require_session)])
+def get_open_orders(market: str = "", limit: int = 50):
+    """
+    目前「掛單中」（未成交）的真實訂單清單，給交易面板的「我的掛單」用。**唯讀**。
+
+    這一支不下單、不撤單，只讀 MAX 上還掛著的委託 —— 下單（post_only/限價）
+    送出後訂單會停在 'wait' 狀態等成交，這裡就是把那份「下單中的數據」攤出來。
+    缺金鑰/打不到 MAX 時比照 dashboard：回 200 + error 欄位，不丟 500。
+    """
+    try:
+        from skills.max_exchange.max_private import get_max_orders
+        raw = get_max_orders(market=market or None, state="wait", limit=limit)
+        if isinstance(raw, dict):  # 錯誤形狀（MAX 回 {error/code/message}）
+            return {"orders": [], "error": str(raw.get("error") or raw.get("message") or raw)[:120]}
+        out = []
+        for o in (raw if isinstance(raw, list) else []):
+            try:
+                vol = float(o.get("volume") or 0)
+                rem = float(o.get("remaining_volume") or 0)
+                out.append({
+                    "id": o.get("id"),
+                    "market": str(o.get("market", "")),
+                    "side": str(o.get("side", "")).lower(),
+                    "ord_type": str(o.get("ord_type", "")).lower(),
+                    "price": (float(o.get("price") or 0) or None),
+                    "avg_price": (float(o.get("avg_price") or 0) or None),
+                    "volume": vol,
+                    "remaining_volume": rem,
+                    "executed_volume": float(o.get("executed_volume") or (vol - rem)),
+                    "state": str(o.get("state", "")),
+                    "created_at": o.get("created_at"),
+                })
+            except (TypeError, ValueError):
+                continue
+        return {"orders": out}
+    except Exception as e:  # noqa: BLE001
+        return {"orders": [], "error": str(e)[:120]}
+
+
 # ── 策略機器人（Paper 模擬盤 MVP）────────────────────────────
 # MVP 刻意全域、免登入：bots 全程 paper（模擬盤、不下真單），沒有真錢風險，
 # 也不觸「一律人工確認」那道實盤安全牆。per-user 歸屬與 live 授權留待後續。
