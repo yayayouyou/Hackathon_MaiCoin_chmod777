@@ -77,6 +77,7 @@ from skills.analytics import (
 from skills.analytics.analyst_desk import run_analyst_desk
 from skills.analytics.event_study import run_signal_backtest, run_composite_backtest
 from analyst_sandbox.sandbox import run_analysis
+from agent.strategy_bots import package_strategy_bot
 from skills.execution.order_executor import create_order, cancel_order, cancel_all_orders
 from skills.execution.live_guard import ledger_summary as get_trading_guard_status
 from skills.education import (
@@ -173,6 +174,7 @@ TOOL_CALLABLES = {
     "run_backtest": run_backtest,
     "backtest_strategy": backtest_strategy,
     "save_strategy": save_strategy,
+    "package_strategy_bot": package_strategy_bot,
     "list_strategies": list_strategies,
     "run_backtest_on_saved_strategy": run_backtest_on_saved_strategy,
     "run_twitter_mention_backtest": run_twitter_mention_backtest,

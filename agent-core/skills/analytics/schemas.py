@@ -649,8 +649,37 @@ COMPARE_SELL_VS_HOLD_SCHEMA = {
     },
 }
 
+# ──────────────────────────────────────────────
+#  Schema：package_strategy_bot（把驗證過的策略打包成自動化 paper 機器人）
+# ──────────────────────────────────────────────
+PACKAGE_STRATEGY_BOT_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "package_strategy_bot",
+        "description": (
+            "把一個（最好先用 backtest_strategy 驗證過的）策略打包成一支可在『策略機器人』面板啟動的"
+            "自動化 Paper 交易機器人。打包後是停止狀態，使用者到面板按啟動才會自動模擬運行"
+            "（全程 paper 模擬盤、不下真單）。當使用者回測完覺得策略不錯、說想『把它變成機器人／"
+            "自動跑／打包／部署／讓它自己交易』時呼叫。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "機器人名稱，給人看的（如『BTC 雙均線 5/20』）"},
+                "strategy_type": {"type": "string", "description": "策略類型", "enum": ["ma_crossover", "rsi_reversal"]},
+                "params": {"type": "object", "description": "策略參數。ma_crossover: {fast_period, slow_period}；rsi_reversal: {rsi_period, oversold, overbought}"},
+                "market": {"type": "string", "description": "MAX 交易對，如 'btctwd'、'ethtwd'", "default": "btctwd"},
+                "period_minutes": {"type": "integer", "description": "K 線週期（分鐘），如 5、15、60", "default": 5},
+            },
+            "required": ["name", "strategy_type", "params"],
+        },
+    },
+}
+
+
 ANALYTICS_TOOLS = [
     CALCULATE_INDICATORS_SCHEMA,
+    PACKAGE_STRATEGY_BOT_SCHEMA,
     RUN_BACKTEST_SCHEMA,
     BACKTEST_STRATEGY_SCHEMA,
     SAVE_STRATEGY_SCHEMA,
@@ -682,6 +711,7 @@ ANALYTICS_TOOL_MAP = {
     "run_analysis":         "analyst_sandbox.sandbox.run_analysis",
     "run_backtest":         "skills.analytics.backtester.run_backtest",
     "save_strategy":        "skills.analytics.strategy_manager.save_strategy",
+    "package_strategy_bot": "agent.strategy_bots.package_strategy_bot",
     "list_strategies":      "skills.analytics.strategy_manager.list_strategies",
     "run_backtest_on_saved_strategy": "skills.analytics.strategy_manager.run_backtest_on_saved_strategy",
     "run_twitter_mention_backtest": "skills.analytics.backtester.run_twitter_mention_backtest",

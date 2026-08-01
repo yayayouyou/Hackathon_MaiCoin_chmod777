@@ -69,6 +69,7 @@ INTENT_TOOLS: Dict[str, Set[str]] = {
     },
     "analytics": {
         "run_backtest", "backtest_strategy", "save_strategy", "list_strategies",
+        "package_strategy_bot",
         "run_backtest_on_saved_strategy", "run_twitter_mention_backtest",
         "detect_market_regime", "analyze_portfolio", "run_analyst_desk",
         "run_signal_backtest", "run_composite_backtest", "run_analysis",
@@ -134,6 +135,7 @@ KEYWORDS: Dict[str, List[str]] = {
                # 菁英 vs 群眾背離 + 名人喊單影響力（analyze_sentiment_divergence / analyze_influence_decay）
                "背離", "菁英", "散戶", "聰明錢", "大戶跟散戶", "喊單", "影響力", "半衰期", "喊加密", "號召力", "帶風向"],
     "analytics": ["回測", "策略", "勝率", "績效", "累計收益", "市場狀態", "投資組合", "portfolio", "regime", "買了就抱",
+                   "機器人", "打包", "自動跑", "自動交易", "自動化", "部署", "變成機器人", "讓它自己", "自己跑", "bot",
                    "增持後", "買入後", "買了會", "帶動", "連帶", "會不會漲", "之後會漲", "歷史上", "統計上",
                    "組合", "同時滿足", "同時觸發", "共振", "多重訊號", "雙重", "且", "又",
                    "自訂分析", "幫我算", "自己算", "寫程式", "客製", "特殊條件", "自己組", "算一下",
