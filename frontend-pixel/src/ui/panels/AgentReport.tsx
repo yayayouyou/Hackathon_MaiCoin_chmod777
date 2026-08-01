@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { getReport } from '../../api';
 import { useAsync } from '../useAsync';
 import { Panel, AsyncState } from '../Panel';
+import { DemoData } from '../DemoData';
 import { useUI } from '../uiStore';
 
 type Tab = 'summary' | 'detail' | 'sources';
@@ -13,6 +14,7 @@ export function AgentReport() {
 
   return (
     <Panel title={`Agent 分析報告 · ${roomTitle}`} accent="violet" size="md">
+      <DemoData what="房間情緒分析報告" />
       <AsyncState loading={loading} error={error} onRetry={reload} />
       {data && (
         <>

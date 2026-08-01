@@ -3,6 +3,7 @@ import { getStrategies } from '../../api';
 import type { Strategy, StrategyKind } from '../../api/types';
 import { useAsync } from '../useAsync';
 import { Panel, AsyncState } from '../Panel';
+import { DemoData } from '../DemoData';
 import { ask } from '../chatStore';
 import { openChatDock } from '../../hud/dockStore';
 import { closePanel } from '../uiStore';
@@ -153,6 +154,7 @@ export function Strategies() {
 
   return (
     <Panel title="策略牆" accent="amber" size="lg">
+      <DemoData what="社群策略與其績效數字" />
       <AsyncState loading={loading} error={error} onRetry={reload} />
       {data && (
         <>

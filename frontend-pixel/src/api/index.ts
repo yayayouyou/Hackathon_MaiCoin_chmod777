@@ -1,5 +1,4 @@
 import { FLAGS } from '../game/core';
-import { getCreds } from '../state';
 import * as mock from './mock';
 import type {
   Balance,
@@ -63,20 +62,14 @@ async function settle<T>(
   return produce();
 }
 
-/** 需要金鑰的端點統一走這裡，未連接時的錯誤訊息才會一致。 */
-async function authed<T>(produce: () => T, ms?: number): Promise<T> {
-  if (!getCreds()) throw new Error('尚未連接 API');
-  return settle(produce, ms);
-}
-
-type BridgePost = { id: string; author: string; text: string; source: 'platform' | 'threads'; source_author?: string; created_at?: string; permalink?: string | null; parent_post_id?: string | null };
+type BridgePost = { id: string; author: string; text: string; source: 'platform' | 'threads'; source_author?: string; created_at?: string; permalink?: string | null; parent_post_id?: string | null; author_role?: 'user' | 'official' | null; sync_state?: 'local' | 'published' | 'imported' | null };
 const bridgeHeaders = (): HeadersInit => ({ 'Content-Type': 'application/json' });
 async function throwBridgeError(response: Response, fallback: string): Promise<never> {
   const body = await response.json().catch(() => ({})) as { detail?: string };
   throw new Error(body.detail ?? fallback);
 }
 function asBridgePost(post: BridgePost): Post {
-  return { id: post.id, author: post.author, color: post.source === 'threads' ? '#8b5cf6' : '#35b8cf', time: post.created_at ? new Date(post.created_at).toLocaleString() : 'now', text: post.text, likes: 0, self: post.source === 'platform', source: post.source, sourceAuthor: post.source_author, permalink: post.permalink, parentPostId: post.parent_post_id };
+  return { id: post.id, author: post.author, color: post.source === 'threads' ? '#8b5cf6' : '#35b8cf', time: post.created_at ? new Date(post.created_at).toLocaleString() : 'now', text: post.text, likes: 0, self: post.source === 'platform', source: post.source, sourceAuthor: post.source_author, permalink: post.permalink, parentPostId: post.parent_post_id, authorRole: post.author_role, syncState: post.sync_state };
 }
 
 export function getRooms(): Promise<RoomInfo[]> {
@@ -117,25 +110,14 @@ export function getThread(roomId: string, signal?: AbortSignal): Promise<Post[]>
   });
 }
 
-export function postMessage(roomId: string, text: string, parentPostId?: string): Promise<Post> {
-  return (async () => {
-    const response = await fetch(`/api/discussions/${encodeURIComponent(roomId)}`, { method: 'POST', credentials: 'same-origin', headers: bridgeHeaders(), body: JSON.stringify({ text, parent_post_id: parentPostId ?? null }) });
-    if (!response.ok) await throwBridgeError(response, '留言發佈失敗');
-    return asBridgePost(((await response.json()) as { post: BridgePost }).post);
-  })();
-  return settle(() => ({
-    id: `${roomId}-self-${Date.now()}`,
-    author: '',
-    color: '#35b8cf',
-    time: '剛剛',
-    text,
-    likes: 0,
-    self: true,
-  }));
+export async function postMessage(roomId: string, text: string, parentPostId?: string): Promise<Post> {
+  const response = await fetch(`/api/discussions/${encodeURIComponent(roomId)}`, { method: 'POST', credentials: 'same-origin', headers: bridgeHeaders(), body: JSON.stringify({ text, parent_post_id: parentPostId ?? null }) });
+  if (!response.ok) await throwBridgeError(response, '留言發佈失敗');
+  return asBridgePost(((await response.json()) as { post: BridgePost }).post);
 }
 
 /** 行情是公開資料，不需要金鑰。面板每 3 秒輪詢一次。 */
-export type ThreadSyncResult = { mentions: number; replies: number; mention_errors: number; reply_errors: number };
+export type ThreadSyncResult = { mentions: number; replies: number; mention_errors: number; reply_errors: number; published: number; publish_errors: number };
 export async function syncThread(roomId: string): Promise<ThreadSyncResult> {
   const response = await fetch(`/api/discussions/${encodeURIComponent(roomId)}/sync`, {
     method: 'POST', credentials: 'same-origin', headers: bridgeHeaders(),
@@ -171,21 +153,107 @@ export async function syncThreadsMentions(): Promise<{ created: number; errors: 
   return { created: data.created, errors: data.errors, busy: data.busy === 1 };
 }
 
-export function getMarkets(quote: Quote): Promise<Market[]> {
-  return settle(
-    () => mock.driftMarkets().filter((m) => m.quote === quote).sort((a, b) => b.volume - a.volume),
-    80 + Math.random() * 90,
-  );
+/**
+ * 後端 `/api/tickers` 只服務這些 TWD 市場，且只回代號不回中文名。
+ * 這裡補的是顯示用標籤，不是行情 —— 價格與漲跌一律以後端回傳的為準。
+ */
+const MARKET_LABELS: Record<string, string> = {
+  BTC: '比特幣', ETH: '以太幣', USDT: '泰達幣', SOL: 'Solana', XRP: 'Ripple',
+  DOGE: '狗狗幣', ADA: 'Cardano', BNB: 'BNB', LTC: '萊特幣', LINK: 'Chainlink',
+};
+
+/** 後端行情端點目前只有 TWD 計價；面板據此顯示提示而不是空白列表。 */
+export const QUOTES_WITH_LIVE_DATA: Quote[] = ['TWD'];
+
+/**
+ * 真後端的 fetch 也要吃 `?failApi=1`。
+ *
+ * 那個旗標的用途是「逼每個面板的錯誤狀態被實際走過一遍」；只讓它作用在
+ * 還沒接後端的 settle() 上，等於接一支真 API 就少一條走得到的錯誤路徑。
+ */
+function failIfFlagged(): void {
+  if (FLAGS.failApi) throw new Error('連線失敗，請稍後再試');
 }
 
-export function getBalances(): Promise<Balance[]> {
-  return authed(() =>
-    mock.BALANCE_SEEDS.map((b) => ({ ...b, price: mock.priceOf(b.asset) })),
-  );
+/** 行情是公開資料，不需要登入。面板每 3 秒輪詢一次。 */
+export async function getMarkets(quote: Quote, signal?: AbortSignal): Promise<Market[]> {
+  failIfFlagged();
+  if (!QUOTES_WITH_LIVE_DATA.includes(quote)) return [];
+  const response = await fetch('/api/tickers', { signal }).catch(() => {
+    // 後端沒起來時 fetch 丟的是 TypeError('Failed to fetch')，直接讓它冒到畫面上
+    // 等於把瀏覽器的內部訊息當成使用者介面。
+    throw new Error('行情連線失敗，請稍後再試');
+  });
+  if (!response.ok) throw new Error('行情連線失敗，請稍後再試');
+  const data = await response.json() as {
+    status: string; error?: string;
+    tickers: { market: string; symbol: string; last: number; pct: number }[];
+  };
+  if (data.status === 'ERROR') throw new Error(`MAX 行情讀取失敗：${data.error ?? '未知原因'}`);
+  return data.tickers.map((t) => ({
+    id: t.market, base: t.symbol, quote: 'TWD' as const,
+    name: MARKET_LABELS[t.symbol] ?? t.symbol,
+    price: t.last, change: t.pct,
+  }));
 }
 
+type DashboardBalance = {
+  currency: string; balance: number; locked: number; staked: number; value_twd: number | null;
+};
+
+/**
+ * 帳戶餘額。**金鑰在後端**（`.env` 的 `MAX_API_KEY`），不是瀏覽器這一份。
+ *
+ * 只讀 `/api/dashboard`，因為它快。成本均價在另一支端點，見 getCostBasis ——
+ * 兩者刻意不合併成一次呼叫，否則餘額表要等帳本重播完才出得來。
+ */
+export async function getBalances(): Promise<Balance[]> {
+  failIfFlagged();
+  const response = await fetch('/api/dashboard', { credentials: 'same-origin' })
+    .catch(() => { throw new Error('帳戶連線失敗，請稍後再試'); });
+  if (response.status === 401) throw new Error('請先登入才能查看帳戶。');
+  if (!response.ok) throw new Error('帳戶連線失敗，請稍後再試');
+  const data = await response.json() as {
+    has_account: boolean; account_error?: string; balances: DashboardBalance[];
+  };
+  if (!data.has_account) {
+    throw new Error(`後端尚未設定 MAX API 金鑰，無法讀取帳戶${data.account_error ? `（${data.account_error}）` : ''}`);
+  }
+  return data.balances.map((b) => {
+    const qty = b.balance + b.locked + b.staked;
+    return {
+      asset: b.currency, available: b.balance, locked: b.locked, staked: b.staked,
+      price: b.currency === 'TWD' ? 1 : qty > 0 && b.value_twd != null ? b.value_twd / qty : null,
+    };
+  });
+}
+
+/**
+ * 每個幣種的平均成本（TWD）。`/api/dashboard` 只有餘額、沒有成本。
+ *
+ * 這支端點要重播整本交易帳本，慢到不能擋在餘額前面，所以獨立成一次呼叫；
+ * 失敗或還沒回來時，面板把均價與盈虧顯示成「—」，而不是拿 0 當成本
+ * —— 那會把「不知道」畫成「全部都是獲利」。
+ */
+export async function getCostBasis(): Promise<Map<string, number>> {
+  failIfFlagged();
+  const response = await fetch('/api/positions', { credentials: 'same-origin' })
+    .catch(() => { throw new Error('成本資料連線失敗'); });
+  if (!response.ok) throw new Error('成本資料讀取失敗');
+  const data = await response.json() as
+    { ok?: boolean; positions?: { currency: string; avg_cost_twd: number }[] };
+  return new Map((data.positions ?? []).map((p) => [p.currency.toUpperCase(), p.avg_cost_twd]));
+}
+
+/**
+ * ⚠ 示範資料：**後端沒有可以從表單開單的端點。**
+ *
+ * `/api/approve_order` 只能憑 token 核准一筆「agent 已經註冊的下單計畫」
+ * （見 agent/trade_approval.py 的 register_pending），無法由這裡發起。
+ * 要真的下單，後端得先長出一支帶風控與核准互鎖的建單端點。
+ */
 export function placeOrder(o: OrderReq): Promise<OrderResult> {
-  return authed(
+  return settle(
     () => ({
       id: `mock-${Date.now().toString(36)}`,
       state: o.type === 'market' ? 'done' : 'wait',

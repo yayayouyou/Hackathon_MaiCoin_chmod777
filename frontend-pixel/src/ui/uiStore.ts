@@ -12,8 +12,6 @@ import {
   saveCharacter,
   saveFavorites,
   saveNickname,
-  setCreds,
-  type Creds,
 } from '../state';
 import { DEFAULT_STANCE, type StanceId } from '../boot/stances';
 
@@ -263,14 +261,15 @@ export function toggleFavorite(roomId: string): void {
   set({ favorites: next });
 }
 
-// ── API 金鑰 ────────────────────────────────────────────────
+// ── 帳戶檢視 ────────────────────────────────────────────────
+//
+// 曾經是「前端收 MAX 金鑰」的閘門。金鑰現在由後端的 .env 保管、簽名也在後端做，
+// 所以這裡只剩一個純 UI 開關：要不要向後端要帳戶資料。
 
-export function connect(c: Creds): void {
-  setCreds(c);
+export function connect(): void {
   set({ connected: true });
 }
 
 export function disconnect(): void {
-  setCreds(null);
   set({ connected: false });
 }

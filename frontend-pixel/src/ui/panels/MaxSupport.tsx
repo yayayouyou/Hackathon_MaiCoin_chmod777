@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { askBot, BOT_GREETING } from '../../api';
 import { Panel } from '../Panel';
+import { DemoData } from '../DemoData';
 
 /**
  * MAX 官方客服機器人。
@@ -50,6 +51,7 @@ export function MaxSupport() {
 
   return (
     <Panel title="MAX 官方客服" accent="max" size="md">
+      <DemoData what="客服機器人（目前是關鍵字比對，不是真的客服）" />
       <div className="thread" ref={threadRef}>
         {log.map((m, i) => (
           <div key={i} className={`chat-msg${m.who === 'me' ? ' me' : ''}`}>

@@ -71,7 +71,10 @@ export function Thread() {
       const post = await postMessage(roomId, t, replyTo?.id);
       setExtra((p) => [...p, post]);
       setReplyTo(null);
-      setActionMessage('留言已發布至 MAIA，並同步到 Threads。');
+      // 留言一定已經進 DB；Threads 是鏡像，失敗時不能說「已同步」。
+      setActionMessage(post.syncState === 'published'
+        ? '留言已發布至 MAIA，並同步到 Threads。'
+        : '留言已存到 MAIA。Threads 暫時無法發布，下次同步會自動補送。');
       requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }));
     } catch (error) {
       setText(t); // 送失敗把內容還給使用者，不要讓他重打
@@ -88,8 +91,9 @@ export function Thread() {
       const result = await syncThread(roomId);
       setExtra([]);
       reload();
-      const errors = result.mention_errors + result.reply_errors;
-      setActionMessage(errors ? `同步完成，但有 ${errors} 個 Threads 分支讀取失敗，請稍後再試。` : `同步完成：匯入 ${result.replies} 則 Threads 回覆。`);
+      const errors = result.mention_errors + result.reply_errors + result.publish_errors;
+      const sent = result.published ? `補送 ${result.published} 則待同步留言、` : '';
+      setActionMessage(errors ? `同步完成，但有 ${errors} 項 Threads 操作失敗，請稍後再試。` : `同步完成：${sent}匯入 ${result.replies} 則 Threads 回覆。`);
     } catch (error) {
       setActionMessage(`同步失敗：${error instanceof Error ? error.message : '未知錯誤'}`);
     } finally {
@@ -152,10 +156,12 @@ export function Thread() {
                 <span>
                   <span className="meta">
                     <b style={{ color: p.color }}>{p.author}</b>
+                    {p.authorRole === 'official' && <span style={{ color: 'var(--amber)' }}>官方</span>}
                     {p.source === 'threads' && <span className="muted">Threads · @{p.sourceAuthor ?? 'unknown'}</span>}
                     {p.permalink && <a className="muted" href={p.permalink} target="_blank" rel="noreferrer">查看原貼</a>}
                     <span className="muted">{p.time}</span>
                     <span className="muted">♥ {p.likes}</span>
+                    {p.syncState === 'local' && <span className="muted" title="已存到 MAIA，Threads 尚未發布成功">⏳ 尚未同步到 Threads</span>}
                   </span>
                   <span className="body">{p.text}</span>
                   {parent && <span className="muted">↳ 回覆 @{parent.sourceAuthor ?? parent.author}</span>}

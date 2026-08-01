@@ -128,7 +128,9 @@ export function RoomPicker() {
           </div>
           {player && <div className="composer" style={{ marginBottom: 14 }}>
             <input value={title} maxLength={120} placeholder="建立新討論區：主題" onChange={(e) => setTitle(e.target.value)} />
-            <input value={openingText} maxLength={460} placeholder="首篇內容（最多 460 字，將由 MAIA 官方發為 Threads 根文）" onChange={(e) => setOpeningText(e.target.value)} />
+            {/* 400 而不是 Threads 的 500：實際可用字數要扣掉 `[MAIA 平台｜暱稱]\n` 署名前綴，
+                暱稱最長 60 字時只剩約 430。開場文發不出去，整個討論區就建不起來。 */}
+            <input value={openingText} maxLength={400} placeholder="首篇內容（最多 400 字，將由 MAIA 官方發為 Threads 根文）" onChange={(e) => setOpeningText(e.target.value)} />
             <button className="btn btn-primary" disabled={creating || !title.trim() || !openingText.trim()} onClick={() => void create()}>
               {creating ? '建立中…' : '建立討論區'}
             </button>

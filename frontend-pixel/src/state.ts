@@ -1,6 +1,5 @@
 import { saveProgress, type Progress } from './api/auth';
 
-export type Creds = { access: string; secret: string };
 
 const NICK_KEY = 'goodui.nickname';
 const FAV_KEY = 'goodui.favorites';
@@ -56,24 +55,6 @@ function sync(patch: Progress): void {
     pending = {};
     void saveProgress(payload);
   }, 400) as unknown as number;
-}
-
-/**
- * 交易所金鑰只活在這個模組變數裡，絕不寫進 localStorage。
- *
- * 交易所 API Key 放在瀏覽器本來就不安全：任何一個 XSS 都能把它讀走，
- * 等於交出帳戶。寫進 localStorage 只是讓這個風險從「分頁存活期間」
- * 延長成「永久」。真正要接 MAX API 時，簽名應該在自己的後端做，
- * 金鑰永遠不進瀏覽器；這裡的表單只是先把 UI 的閘門邏輯做出來。
- */
-let creds: Creds | null = null;
-
-export function getCreds(): Creds | null {
-  return creds;
-}
-
-export function setCreds(c: Creds | null): void {
-  creds = c;
 }
 
 /**

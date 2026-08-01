@@ -32,7 +32,7 @@ export function ProfilePod() {
       <span className="pod-text">
         <span className="pod-name">{nickname}</span>
         <span className="pod-state" data-on={connected ? '1' : '0'}>
-          {connected ? '● 已連接 MAX' : '○ 未連接 · 示範帳戶'}
+          {connected ? '● 已連接 MAX' : '○ 未連接'}
         </span>
       </span>
       <kbd>I</kbd>

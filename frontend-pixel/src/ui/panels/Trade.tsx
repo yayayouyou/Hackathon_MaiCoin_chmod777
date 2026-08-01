@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getBalances, getMarkets, placeOrder } from '../../api';
+import { getBalances, getCostBasis, getMarkets, placeOrder, QUOTES_WITH_LIVE_DATA } from '../../api';
 import type { Balance, Market, Quote } from '../../api/types';
 import { useAsync } from '../useAsync';
+import { DemoData } from '../DemoData';
 import { connect, disconnect, useUI } from '../uiStore';
 
 const QUOTES: Quote[] = ['TWD', 'USDT', 'BTC'];
@@ -16,6 +17,9 @@ function fmt(n: number, quote: Quote): string {
 }
 
 const twd = (n: number) => n.toLocaleString('zh-TW', { maximumFractionDigits: 0 });
+
+/** 拿不到的數字一律顯示破折號，不要拿 0 冒充。 */
+const orDash = (n: number | null, render: (v: number) => string) => (n === null ? '—' : render(n));
 
 /** 小數位數隨數量級調整：均價 1.62 不該被四捨五入成 2。 */
 function money(n: number): string {
@@ -138,6 +142,13 @@ function MarketList({
           ⚠ {error}
         </p>
       )}
+      {/* 行情端點只服務 TWD。空列表配上「找不到交易對」會被誤讀成搜尋沒中，
+          所以這裡要講清楚是後端還沒有這個計價幣的資料。 */}
+      {!QUOTES_WITH_LIVE_DATA.includes(quote) && (
+        <p className="muted" role="note" style={{ fontSize: 11, lineHeight: 1.5, marginBottom: 8, color: 'var(--amber)' }}>
+          ⚠ 後端行情端點目前只提供 <b>TWD</b> 計價的即時報價，{quote} 交易對尚未接上。
+        </p>
+      )}
       {loading ? (
         <div className="state">
           <span className="spinner" />
@@ -227,6 +238,7 @@ function OrderForm({
 
   return (
     <>
+      <DemoData what="下單" />
       <div className="side-tabs">
         <button data-side="buy" aria-selected={side === 'buy'} onClick={() => setSide('buy')}>
           買入
@@ -306,31 +318,23 @@ function OrderForm({
   );
 }
 
+/**
+ * 這裡曾經是一張收 MAX ACCESS/SECRET KEY 的表單。
+ *
+ * 拿掉的理由：**那兩個欄位收到的金鑰哪裡都沒去。** 真正在對 MAX 簽名的是後端
+ * （`.env` 的 `MAX_API_KEY`）。一張問你要交易所 secret、卻只是把它丟掉的表單，
+ * 比沒有表單危險 —— 使用者沒有理由知道它是裝飾，而他填進去的是真的金鑰。
+ */
 function CredsForm() {
-  const [access, setAccess] = useState('');
-  const [secret, setSecret] = useState('');
-
   return (
     <div className="gate-mask">
-      <h4>需要 MAX API 金鑰</h4>
-      <p>下單與持倉需要讀取你的帳戶資料，請先填入 MAX 的 API 金鑰。左側行情是公開資料，不受影響。</p>
-      <label className="field">
-        <span>ACCESS KEY</span>
-        <input type="text" value={access} onChange={(e) => setAccess(e.target.value)} autoComplete="off" />
-      </label>
-      <label className="field">
-        <span>SECRET KEY</span>
-        <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
-      </label>
-      <button
-        className="btn btn-primary"
-        disabled={!access.trim() || !secret.trim()}
-        onClick={() => connect({ access: access.trim(), secret: secret.trim() })}
-      >
+      <h4>查看我的 MAX 帳戶</h4>
+      <p>餘額與持倉由後端以伺服器端保管的 MAX API 金鑰讀取。左側行情是公開資料，不需要這一步。</p>
+      <button className="btn btn-primary" onClick={() => connect()}>
         連接
       </button>
       <p className="warn">
-        金鑰只存在記憶體中，重整頁面就會消失，不會寫入瀏覽器儲存空間。實際串接交易所時，簽名應該在你自己的後端完成，金鑰永遠不要進到瀏覽器 —— 任何一個 XSS 都能把它讀走。
+        瀏覽器不會、也不該持有交易所金鑰 —— 任何一個 XSS 都能把它讀走。簽名一律在後端完成。
       </p>
     </div>
   );
@@ -339,8 +343,8 @@ function CredsForm() {
 function Locked() {
   return (
     <div className="gate-mask">
-      <h4>持倉已鎖定</h4>
-      <p>填入 API 金鑰後即可看到你的現貨持有部位、成本與未實現盈虧。</p>
+      <h4>持倉未載入</h4>
+      <p>點左側的「連接」即可向後端讀取你的現貨持有部位、成本與未實現盈虧。</p>
     </div>
   );
 }
@@ -349,6 +353,8 @@ function Locked() {
 
 function Positions({ state }: { state: ReturnType<typeof useAsync<Balance[]>> }) {
   const { data, loading, error, reload } = state;
+  // 成本另外抓，不擋餘額 —— 那支端點要重播整本帳本，會慢好幾秒。
+  const cost = useAsync(() => getCostBasis(), []);
 
   if (loading) {
     return (
@@ -369,8 +375,11 @@ function Positions({ state }: { state: ReturnType<typeof useAsync<Balance[]>> })
     );
   }
 
-  const rows = (data ?? []).filter((b) => b.available + b.locked > 0);
-  const totalValue = rows.reduce((s, b) => s + (b.available + b.locked) * b.price, 0);
+  const qtyOf = (b: Balance) => b.available + b.locked + b.staked;
+  const rows = (data ?? []).filter((b) => qtyOf(b) > 0);
+  const totalValue = rows.reduce((s, b) => s + (b.price === null ? 0 : qtyOf(b) * b.price), 0);
+  const avgCostOf = (asset: string) => (asset === 'TWD' ? 1 : cost.data?.get(asset) ?? null);
+  const noCostBasis = !cost.loading && rows.some((b) => b.asset !== 'TWD' && avgCostOf(b.asset) === null);
 
   return (
     <>
@@ -402,21 +411,28 @@ function Positions({ state }: { state: ReturnType<typeof useAsync<Balance[]>> })
           </thead>
           <tbody>
             {rows.map((b) => {
-              const qty = b.available + b.locked;
-              const value = qty * b.price;
-              const pnl = b.asset === 'TWD' ? 0 : value - qty * b.avgCost;
-              const pct = b.avgCost > 0 && b.asset !== 'TWD' ? (b.price / b.avgCost - 1) * 100 : 0;
+              const qty = qtyOf(b);
+              const frozen = b.locked + b.staked;
+              const value = b.price === null ? null : qty * b.price;
+              const avgCost = avgCostOf(b.asset);
+              const known = b.asset !== 'TWD' && b.price !== null && avgCost !== null;
+              const pnl = known ? value! - qty * avgCost! : null;
+              const pct = known && avgCost! > 0 ? (b.price! / avgCost! - 1) * 100 : null;
               return (
                 <tr key={b.asset}>
                   <td>{b.asset}</td>
                   <td>{b.available.toLocaleString('zh-TW', { maximumFractionDigits: 5 })}</td>
-                  <td className="muted col-drop">
-                    {b.locked > 0 ? b.locked.toLocaleString('zh-TW', { maximumFractionDigits: 5 }) : '—'}
+                  <td className="muted col-drop" title={b.staked > 0 ? `含質押中 ${b.staked}` : undefined}>
+                    {frozen > 0 ? frozen.toLocaleString('zh-TW', { maximumFractionDigits: 5 }) : '—'}
                   </td>
-                  <td className="muted col-drop">{b.asset === 'TWD' ? '—' : money(b.avgCost)}</td>
-                  <td>{twd(value)}</td>
-                  <td className={pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'muted'}>
-                    {b.asset === 'TWD' ? '—' : `${pnl >= 0 ? '+' : ''}${twd(pnl)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`}
+                  <td className="muted col-drop">
+                    {b.asset === 'TWD' ? '—' : cost.loading ? '計算中…' : orDash(avgCost, money)}
+                  </td>
+                  <td>{orDash(value, twd)}</td>
+                  <td className={pnl === null ? 'muted' : pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'muted'}>
+                    {pnl === null || pct === null
+                      ? '—'
+                      : `${pnl >= 0 ? '+' : ''}${twd(pnl)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`}
                   </td>
                 </tr>
               );
@@ -424,8 +440,13 @@ function Positions({ state }: { state: ReturnType<typeof useAsync<Balance[]>> })
           </tbody>
         </table>
       </div>
+      {noCostBasis && (
+        <p className="muted" role="note" style={{ fontSize: 11, lineHeight: 1.5, marginTop: 10, color: 'var(--amber)' }}>
+          ⚠ 均價與盈虧顯示「—」：成本要由 <code>/api/positions</code> 重播交易帳本才算得出來，這次沒有取得{cost.error ? `（${cost.error}）` : ''}。
+        </p>
+      )}
       <p className="muted" style={{ fontSize: 11, marginTop: 10 }}>
-        重整頁面後金鑰會清空，需要重新連接。
+        餘額與均價來自後端的 MAX API 金鑰。重整頁面後這裡會回到未連接狀態。
       </p>
     </>
   );

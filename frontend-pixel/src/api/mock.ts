@@ -1,34 +1,14 @@
-import type {
-  Balance,
-  EventItem,
-  Market,
-  NewsItem,
-  Post,
-  Quote,
-  Report,
-  RoomInfo,
-  Strategy,
-} from './types';
+import type { EventItem, NewsItem, Report, Strategy } from './types';
 
 /**
- * 全部的假資料。換成真後端時整個檔案會被刪掉，
- * api/index.ts 的函式簽名維持不變，面板一行都不用改。
+ * 尚未有後端端點的示範資料。
+ *
+ * 討論室、行情與帳戶餘額都已改接真後端，對應的假資料已經刪除 —— 這裡只剩
+ * 後端還沒有端點的四塊：房間分析報告、MAX 公告 / 活動、策略牆、客服機器人。
+ *
+ * **凡是用到這個檔案的面板，畫面上都必須掛 `<DemoData>` 標示。**
+ * 假資料本身不是問題，看起來像真的才是。
  */
-
-export const ROOMS: RoomInfo[] = [
-  { id: 'btc-halving', topic: 'BTC 減半後的籌碼結構', tag: '比特幣', accent: 'amber', heat: 9840, online: 412, change: 12.4, sentiment: 42 },
-  { id: 'eth-l2', topic: 'ETH L2 費用戰爭', tag: '以太坊', accent: 'violet', heat: 7620, online: 305, change: 6.1, sentiment: 18 },
-  { id: 'ai-agent', topic: 'AI Agent 會吃掉哪些工作', tag: 'AI', accent: 'violet', heat: 7150, online: 288, change: 24.8, sentiment: 61 },
-  { id: 'twd-flow', topic: '台幣入金與匯率溢價觀察', tag: '台股/匯率', accent: 'green', heat: 6480, online: 241, change: -3.2, sentiment: -12 },
-  { id: 'sol-eco', topic: 'SOL 生態的真實用戶數', tag: 'Solana', accent: 'cyan', heat: 5930, online: 219, change: 8.7, sentiment: 27 },
-  { id: 'stable', topic: '穩定幣監管與 USDT 風險', tag: '穩定幣', accent: 'green', heat: 5210, online: 187, change: 1.9, sentiment: -34 },
-  { id: 'defi-yield', topic: 'DeFi 收益還剩多少肉', tag: 'DeFi', accent: 'cyan', heat: 4870, online: 164, change: -6.5, sentiment: -21 },
-  { id: 'tw-regulation', topic: '台灣 VASP 專法進度', tag: '法規', accent: 'amber', heat: 4360, online: 152, change: 15.3, sentiment: 8 },
-  { id: 'nvda-chain', topic: '算力股與加密礦業的連動', tag: '美股', accent: 'green', heat: 3980, online: 131, change: 4.4, sentiment: 35 },
-  { id: 'memecoin', topic: '迷因幣還有沒有下一輪', tag: '迷因幣', accent: 'violet', heat: 3540, online: 118, change: -11.2, sentiment: -58 },
-  { id: 'rwa', topic: 'RWA 代幣化的實際落地', tag: 'RWA', accent: 'cyan', heat: 2910, online: 94, change: 7.6, sentiment: 14 },
-  { id: 'quant', topic: '散戶量化策略的幸存者偏差', tag: '量化', accent: 'amber', heat: 2450, online: 76, change: 2.1, sentiment: -4 },
-];
 
 const REPORT_TEMPLATES: Omit<Report, 'roomId' | 'updatedAt'>[] = [
   {
@@ -77,129 +57,8 @@ const REPORT_TEMPLATES: Omit<Report, 'roomId' | 'updatedAt'>[] = [
 export function reportFor(roomId: string): Report {
   const idx = Math.abs(hashStr(roomId)) % REPORT_TEMPLATES.length;
   const tpl = REPORT_TEMPLATES[idx]!;
-  // sentiment 一律以房間本身的值為準，不用模板的。
-  // 場景的燈光與看板讀的是 RoomInfo.sentiment；若報告面板顯示另一個數字，
-  // 玩家會看到「房間一片綠、報告寫著 -18」這種自相矛盾的畫面。
-  const room = ROOMS.find((r) => r.id === roomId);
-  return { ...tpl, roomId, updatedAt: '3 分鐘前', ...(room && { sentiment: room.sentiment }) };
+  return { ...tpl, roomId, updatedAt: '3 分鐘前' };
 }
-
-const AUTHORS: [string, string][] = [
-  ['鏈上打工仔', '#35b8cf'],
-  ['台南阿明', '#ffc23d'],
-  ['只做現貨', '#4ee88a'],
-  ['看圖說故事', '#b06cff'],
-  ['被套的老王', '#ff4f78'],
-  ['冷錢包保管員', '#7d8ba5'],
-  ['夜盤守夜人', '#00e5ff'],
-];
-
-const BODIES = [
-  '這份報告的籌碼面我認同，但情緒指標我覺得已經過熱了，上一次這個讀數之後跌了兩成。',
-  '交易所餘額創新低這件事被講到爛了，問題是有多少是搬去冷錢包、有多少是進了 ETF 託管。',
-  '我還是那句話，資金費率沒過熱之前都還算健康。真正要怕的是費率翻倍那天。',
-  '樓上說的對照組能不能貼一下來源？我自己抓的數字跟報告差蠻多的。',
-  '台幣溢價 0.4% 其實不太正常，之前平常都在 0.1 以下。可能有大戶在進場。',
-  '單純提醒一下，這種討論室的樣本偏差很嚴重，會來討論的本來就都是有部位的人。',
-  '長期我看好，但短線我減了三成。不是看空，是槓桿太多我睡不著。',
-  '報告裡「分歧點」那段寫得不錯，至少沒有硬要給一個方向。',
-  '有人注意到最近入金的速度變慢了嗎？我這邊銀行轉帳延遲明顯變久。',
-  '我的做法很簡單：定期定額，不看情緒指標。過去三年這樣做贏過我所有的擇時嘗試。',
-];
-
-export function threadFor(roomId: string): Post[] {
-  const seed = Math.abs(hashStr(roomId));
-  return BODIES.map((text, i) => {
-    const a = AUTHORS[(seed + i * 3) % AUTHORS.length]!;
-    return {
-      id: `${roomId}-${i}`,
-      author: a[0],
-      color: a[1],
-      time: `${BODIES.length - i} 分鐘前`,
-      text,
-      likes: (seed + i * 7) % 48,
-    };
-  });
-}
-
-// ── 行情 ────────────────────────────────────────────────────
-
-type Seed = { base: string; name: string; quote: Quote; price: number; volume: number };
-
-const MARKET_SEEDS: Seed[] = [
-  { base: 'USDT', name: '泰達幣', quote: 'TWD', price: 32.48, volume: 168_000_000 },
-  { base: 'BTC', name: '比特幣', quote: 'TWD', price: 3_412_000, volume: 96_400_000 },
-  { base: 'ETH', name: '以太幣', quote: 'TWD', price: 118_600, volume: 41_200_000 },
-  { base: 'USDC', name: 'USD Coin', quote: 'TWD', price: 32.41, volume: 22_800_000 },
-  { base: 'SOL', name: 'Solana', quote: 'TWD', price: 6_820, volume: 18_900_000 },
-  { base: 'XRP', name: 'Ripple', quote: 'TWD', price: 78.4, volume: 14_600_000 },
-  { base: 'DOGE', name: '狗狗幣', quote: 'TWD', price: 6.18, volume: 9_300_000 },
-  { base: 'ADA', name: 'Cardano', quote: 'TWD', price: 25.3, volume: 6_100_000 },
-  { base: 'LINK', name: 'Chainlink', quote: 'TWD', price: 698, volume: 5_400_000 },
-  { base: 'AVAX', name: 'Avalanche', quote: 'TWD', price: 1_146, volume: 4_200_000 },
-  { base: 'DOT', name: 'Polkadot', quote: 'TWD', price: 191, volume: 3_100_000 },
-  { base: 'LTC', name: '萊特幣', quote: 'TWD', price: 3_284, volume: 2_800_000 },
-  { base: 'BCH', name: '比特幣現金', quote: 'TWD', price: 16_940, volume: 2_400_000 },
-  { base: 'TRX', name: 'TRON', quote: 'TWD', price: 9.46, volume: 1_900_000 },
-  { base: 'MAX', name: 'MAX Token', quote: 'TWD', price: 1.34, volume: 1_200_000 },
-  { base: 'SHIB', name: '柴犬幣', quote: 'TWD', price: 0.000748, volume: 880_000 },
-
-  { base: 'BTC', name: '比特幣', quote: 'USDT', price: 105_040, volume: 12_400_000 },
-  { base: 'ETH', name: '以太幣', quote: 'USDT', price: 3_651, volume: 6_800_000 },
-  { base: 'SOL', name: 'Solana', quote: 'USDT', price: 209.9, volume: 3_200_000 },
-  { base: 'XRP', name: 'Ripple', quote: 'USDT', price: 2.414, volume: 2_100_000 },
-  { base: 'DOGE', name: '狗狗幣', quote: 'USDT', price: 0.1903, volume: 1_400_000 },
-  { base: 'ADA', name: 'Cardano', quote: 'USDT', price: 0.779, volume: 940_000 },
-  { base: 'LINK', name: 'Chainlink', quote: 'USDT', price: 21.49, volume: 810_000 },
-  { base: 'AVAX', name: 'Avalanche', quote: 'USDT', price: 35.28, volume: 620_000 },
-  { base: 'DOT', name: 'Polkadot', quote: 'USDT', price: 5.88, volume: 450_000 },
-  { base: 'LTC', name: '萊特幣', quote: 'USDT', price: 101.1, volume: 390_000 },
-  { base: 'BCH', name: '比特幣現金', quote: 'USDT', price: 521.5, volume: 280_000 },
-  { base: 'TRX', name: 'TRON', quote: 'USDT', price: 0.2912, volume: 210_000 },
-
-  { base: 'ETH', name: '以太幣', quote: 'BTC', price: 0.03476, volume: 142 },
-];
-
-/** 現價會在原始價附近隨機漫步，讓 3 秒一次的輪詢看起來像真的在跳。 */
-const live = new Map<string, { price: number; change: number }>();
-
-function marketId(s: Seed): string {
-  return `${s.base}${s.quote}`.toLowerCase();
-}
-
-export function driftMarkets(): Market[] {
-  return MARKET_SEEDS.map((s) => {
-    const id = marketId(s);
-    // hashStr 可能是負的，取絕對值才會落在 -4.5% ~ +4.5% 的預期區間
-    const cur = live.get(id) ?? { price: s.price, change: (Math.abs(hashStr(id)) % 900) / 100 - 4.5 };
-    // 每次抓取漂移約 ±0.15%，並輕微往原始價回歸，避免長時間跑掉
-    const drift = (Math.random() - 0.5) * 0.003;
-    const pull = (s.price - cur.price) / s.price * 0.05;
-    const price = cur.price * (1 + drift + pull);
-    const change = cur.change + (price / cur.price - 1) * 100;
-    live.set(id, { price, change });
-    return { id, base: s.base, quote: s.quote, name: s.name, price, change, volume: s.volume };
-  });
-}
-
-export function priceOf(asset: string): number {
-  if (asset === 'TWD') return 1;
-  const id = `${asset}twd`.toLowerCase();
-  const l = live.get(id);
-  if (l) return l.price;
-  return MARKET_SEEDS.find((s) => s.base === asset && s.quote === 'TWD')?.price ?? 0;
-}
-
-export const BALANCE_SEEDS: Omit<Balance, 'price'>[] = [
-  { asset: 'TWD', available: 184_260, locked: 12_000, avgCost: 1 },
-  { asset: 'USDT', available: 3_240.51, locked: 0, avgCost: 31.86 },
-  { asset: 'BTC', available: 0.08412, locked: 0.005, avgCost: 2_980_000 },
-  { asset: 'ETH', available: 1.284, locked: 0, avgCost: 124_500 },
-  { asset: 'SOL', available: 18.6, locked: 0, avgCost: 5_940 },
-  { asset: 'MAX', available: 12_400, locked: 0, avgCost: 1.62 },
-];
-
-// ── MAX 官方消息 / 活動 ─────────────────────────────────────
 
 export const NEWS: NewsItem[] = [
   {

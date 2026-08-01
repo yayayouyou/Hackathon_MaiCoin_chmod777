@@ -47,6 +47,9 @@ export type Post = {
   sourceAuthor?: string;
   permalink?: string | null;
   parentPostId?: string | null;
+  authorRole?: 'user' | 'official' | null;
+  /** local = 已進 DB 但還沒發到 Threads（Threads 端暫時失敗，下次同步會補送） */
+  syncState?: 'local' | 'published' | 'imported' | null;
 };
 
 export type Quote = 'TWD' | 'USDT' | 'BTC';
@@ -59,18 +62,17 @@ export type Market = {
   name: string;
   price: number;
   change: number;
-  /** 24h 成交額，以計價幣為單位 */
-  volume: number;
 };
 
 export type Balance = {
   asset: string;
   available: number;
   locked: number;
-  /** 平均成本（TWD） */
-  avgCost: number;
-  /** 目前價格（TWD） */
-  price: number;
+  /** 質押中。MAX 的質押部位算在資產內，但既不可用也不算凍結 */
+  staked: number;
+  /** 目前價格（TWD）。null = 抓不到報價 */
+  price: number | null;
+  // 平均成本不在這裡 —— 它來自另一支慢很多的端點，見 api.getCostBasis()
 };
 
 export type OrderReq = {
