@@ -221,6 +221,14 @@ export function makeLobby(): Room {
     // 就糊成一團 —— 房間的冷調交給地板材質本身，不要靠光去染。
     ambient: '#d2d4e2',
     floor: 'plaza',
+    // 功能分區背景色塊，讓右半場「一眼分得出哪一區是誰的」：
+    //   ① MAX 資訊角（藍）：涵蓋信託櫃檯 / 代幣柱 / 公告·活動終端機 / MAIA 櫃檯
+    //   ② 我的帳戶區（綠）：涵蓋我的金庫 / 交易性格 / 損益對帳，與中央雕像分開
+    // 只是地板上的視覺分區（畫在道具與徽章之下），不影響碰撞或互動。左側社群不加。
+    zones: [
+      { rect: { x: 512, y: 90, w: 328, h: 206 }, tint: '#6f8fff2a', border: '#6f8fff' },
+      { rect: { x: 516, y: 308, w: 340, h: 120 }, tint: '#4ee88a26', border: '#4ee88a' },
+    ],
     emblem: { x: 480, y: 420, r: 66 },
     props: [...decor, ...built.props, ...doorProps(doors)],
     portals: doorPortals(doors),

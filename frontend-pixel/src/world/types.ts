@@ -179,6 +179,13 @@ export type Room = {
    */
   carpet?: Rect;
   /**
+   * 功能分區的背景色塊（大廳用）：在地板上、道具與徽章之下鋪一層半透明色，
+   * 把「同一組功能」在視覺上圈成一區（例：MAX 資訊角、我的帳戶區）。
+   * `tint` 是含 alpha 的填色（如 '#6f8fff28'），`border` 是硬邊框色（省略則不畫框）。
+   * 只是視覺分區，不影響碰撞或互動。
+   */
+  zones?: { rect: Rect; tint: string; border?: string }[];
+  /**
    * 討論室的主題資訊。中文文字由 worldLabels 疊在 topicboard 上 ——
    * 8px 的中文畫進 backbuffer 會糊掉，這是全專案一致的做法。
    */
