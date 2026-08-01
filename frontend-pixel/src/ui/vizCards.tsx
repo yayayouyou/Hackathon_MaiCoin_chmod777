@@ -194,6 +194,295 @@ function Orderbook({ d }: { d: DepthData }): ReactNode {
   );
 }
 
+// ── 共用（C/D/E）小工具 ─────────────────────────────────────
+const nOrDash = (x: unknown, suffix = '', digits = 1): string => {
+  const n = toNum(x);
+  return Number.isFinite(n) ? `${n.toFixed(digits)}${suffix}` : '—';
+};
+const money = (x: unknown): string => {
+  const n = toNum(x);
+  return Number.isFinite(n) ? `NT$${Math.round(n).toLocaleString('en-US')}` : '—';
+};
+const signTone = (x: unknown): 'up' | 'down' | undefined => {
+  const n = toNum(x);
+  if (!Number.isFinite(n) || n === 0) return undefined;
+  return n > 0 ? 'up' : 'down';
+};
+const subObj = (m: Record<string, unknown>, k: string): Record<string, unknown> =>
+  isObj(m[k]) ? (m[k] as Record<string, unknown>) : {};
+
+function Tile({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' | 'warn' }): ReactNode {
+  return (
+    <div className="viz-tile" data-tone={tone ?? ''}>
+      <span className="viz-tile-v">{value}</span>
+      <span className="viz-tile-l">{label}</span>
+    </div>
+  );
+}
+
+// ── C. 資產配置堆疊條（get_max_accounts）─────────────────────
+// ★後端回「陣列」不是 dict：Array<{currency,total,...}>；空是 []（沒有 {error}）。
+// ★單位陷阱：total 是各幣別原生單位數量，跨幣別加總無共同計價 → 標「未換算」，不宣稱佔比。
+type AcctSeg = { currency: string; total: number; share: number };
+export type AcctData = { segs: AcctSeg[] };
+const ACCT_COLORS = ['#ffc23d', '#b06cff', '#00e5ff', '#4ee88a', '#6f8fff', '#ff4f78', '#7d8ba5'];
+const acctColor = (i: number): string => ACCT_COLORS[i % ACCT_COLORS.length]!;
+
+export function normAccounts(result: unknown): AcctData | null {
+  if (!Array.isArray(result)) return null;
+  const rows = result
+    .filter((a): a is Record<string, unknown> => isObj(a))
+    .map((a) => ({ currency: typeof a.currency === 'string' ? a.currency : '?', total: toNum(a.total) }))
+    .filter((a) => Number.isFinite(a.total) && a.total > 0)
+    .sort((x, y) => y.total - x.total);
+  if (rows.length === 0) return null;
+  const top = rows.slice(0, 6);
+  const restSum = rows.slice(6).reduce((s, r) => s + r.total, 0);
+  if (restSum > 0) top.push({ currency: '其他', total: restSum });
+  const sum = top.reduce((s, r) => s + r.total, 0);
+  if (sum <= 0) return null;
+  return { segs: top.map((r) => ({ currency: r.currency, total: r.total, share: r.total / sum })) };
+}
+
+const fmtAmt = (n: number): string => n.toLocaleString('en-US', { maximumFractionDigits: 6 });
+
+function Accounts({ d }: { d: AcctData }): ReactNode {
+  return (
+    <div className="viz-acct">
+      <div className="viz-acct-note">各幣別持有量 · 未換算為單一計價</div>
+      <div className="viz-acct-bar">
+        {d.segs.map((s, i) => (
+          <span
+            key={s.currency}
+            className="viz-acct-seg"
+            style={{ width: `${(s.share * 100).toFixed(1)}%`, background: acctColor(i) }}
+            title={`${s.currency} ${(s.share * 100).toFixed(1)}%`}
+          />
+        ))}
+      </div>
+      <div className="viz-acct-legend">
+        {d.segs.map((s, i) => (
+          <div className="viz-acct-row" key={s.currency}>
+            <span className="viz-swatch" style={{ background: acctColor(i) }} />
+            <span className="viz-acct-cur">{s.currency}</span>
+            <span className="viz-acct-amt">{fmtAmt(s.total)}</span>
+            <span className="viz-acct-share">{(s.share * 100).toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── D. 交易 DNA 六軸雷達（get_trading_dna_score）─────────────
+// dict：{axes:[6 中文], scores:{軸名:float 0-100}, archetype:str|null, insufficient_data, tags}。
+// ★scores 以「軸名」為 key，要照 axes 順序索引；insufficient 時不可宣稱 archetype。
+const DNA_AXES = ['活躍度', '紀律', '擇時', '分散', '持有耐心', '風險控管'];
+export type DnaData = {
+  axes: string[];
+  vals: number[];
+  archetype: string | null;
+  tags: string[];
+  insufficient: boolean;
+};
+
+export function normDna(result: unknown): DnaData | null {
+  if (!isObj(result) || hasError(result)) return null;
+  const axes =
+    Array.isArray(result.axes) && result.axes.length > 0 ? result.axes.map((a) => String(a)) : DNA_AXES;
+  const scores = isObj(result.scores) ? result.scores : {};
+  const vals = axes.map((name) => clamp(toNum(scores[name]) || 0, 0, 100));
+  return {
+    axes,
+    vals,
+    archetype: typeof result.archetype === 'string' ? result.archetype : null,
+    tags: Array.isArray(result.tags) ? result.tags.map((t) => String(t)) : [],
+    insufficient: !!result.insufficient_data,
+  };
+}
+
+function DnaRadar({ d }: { d: DnaData }): ReactNode {
+  const cx = 110;
+  const cy = 100;
+  const maxR = 76;
+  const n = d.axes.length;
+  const pt = (i: number, r: number): [number, number] => {
+    const th = (-90 + (360 / n) * i) * DEG;
+    return [cx + r * Math.cos(th), cy + r * Math.sin(th)];
+  };
+  const ring = (r: number): string =>
+    d.axes.map((_, i) => pt(i, r).map((v) => v.toFixed(1)).join(',')).join(' ');
+  const dataPts = d.axes.map((_, i) => pt(i, (maxR * (d.vals[i] ?? 0)) / 100));
+  return (
+    <div className="viz-radar">
+      <div className="viz-radar-head">
+        {d.insufficient ? (
+          <span className="viz-warn">樣本不足（交易 &lt; 20 筆），尚無法判定交易性格</span>
+        ) : (
+          <>
+            {d.archetype && <span className="viz-arche">{d.archetype}</span>}
+            {d.tags.slice(0, 4).map((t) => (
+              <span key={t} className="viz-tagchip">
+                {t}
+              </span>
+            ))}
+          </>
+        )}
+      </div>
+      <svg viewBox="0 0 220 200" className="viz-radar-svg" role="img" aria-label="交易 DNA 六軸雷達">
+        {[25, 50, 75, 100].map((p) => (
+          <polygon key={p} points={ring((maxR * p) / 100)} fill="none" stroke="#3d4a61" strokeWidth={1} />
+        ))}
+        {d.axes.map((_, i) => {
+          const [x, y] = pt(i, maxR);
+          return <line key={i} x1={cx} y1={cy} x2={x.toFixed(1)} y2={y.toFixed(1)} stroke="#3d4a61" strokeWidth={1} />;
+        })}
+        <polygon
+          points={dataPts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}
+          fill="#b06cff"
+          fillOpacity={d.insufficient ? 0.12 : 0.28}
+          stroke="#b06cff"
+          strokeWidth={2}
+        />
+        {dataPts.map(([x, y], i) => (
+          <rect key={i} x={x - 1.5} y={y - 1.5} width={3} height={3} fill="#b06cff" />
+        ))}
+        {d.axes.map((name, i) => {
+          const [x, y] = pt(i, maxR + 13);
+          const anchor = x < cx - 5 ? 'end' : x > cx + 5 ? 'start' : 'middle';
+          return (
+            <text
+              key={name}
+              x={x.toFixed(1)}
+              y={y.toFixed(1)}
+              textAnchor={anchor}
+              dominantBaseline="middle"
+              className="viz-radar-axis"
+            >
+              {name}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ── E. 交易行為四維卡（analyze_trading_behavior）──────────────
+// dict：{metrics:[固定4序], findings:[], sample:{closes_analyzed,closes_total}, data_confidence}。
+// 各 metric 多個 float|null 欄位，務必防 null；examples.ts 是毫秒。
+type BMetric = Record<string, unknown>;
+export type BehaviorData = {
+  metrics: BMetric[];
+  findings: number;
+  analyzed: number;
+  totalCloses: number;
+  confidence: string | null;
+};
+
+export function normBehavior(result: unknown): BehaviorData | null {
+  if (!isObj(result) || hasError(result)) return null;
+  const metrics = Array.isArray(result.metrics) ? result.metrics.filter((m): m is BMetric => isObj(m)) : [];
+  if (metrics.length === 0) return null;
+  const sample = isObj(result.sample) ? result.sample : {};
+  return {
+    metrics,
+    findings: Array.isArray(result.findings) ? result.findings.length : 0,
+    analyzed: toNum(sample.closes_analyzed) || 0,
+    totalCloses: toNum(sample.closes_total) || 0,
+    confidence: typeof result.data_confidence === 'string' ? result.data_confidence : null,
+  };
+}
+
+function metricBody(m: BMetric, idx: number): ReactNode {
+  if (idx === 0) {
+    const w = subObj(m, 'winners');
+    const l = subObj(m, 'losers');
+    return (
+      <div className="viz-tiles">
+        <Tile label="賺錢單持有" value={nOrDash(w.median_hold_days, 'd')} />
+        <Tile label="虧損單持有" value={nOrDash(l.median_hold_days, 'd')} />
+        <Tile
+          label="虧/賺持有比"
+          value={nOrDash(m.ratio_loser_over_winner, '×')}
+          tone={toNum(m.ratio_loser_over_winner) > 1 ? 'down' : undefined}
+        />
+      </div>
+    );
+  }
+  if (idx === 1) {
+    const b = subObj(m, 'buys');
+    const s = subObj(m, 'sells');
+    const bt = signTone(b.median_prior_change_pct); // 買在漲後=追高，反過來上色
+    return (
+      <div className="viz-tiles">
+        <Tile
+          label="買在前7日"
+          value={nOrDash(b.median_prior_change_pct, '%')}
+          tone={bt === 'up' ? 'down' : bt === 'down' ? 'up' : undefined}
+        />
+        <Tile label="賣在前7日" value={nOrDash(s.median_prior_change_pct, '%')} tone={signTone(s.median_prior_change_pct)} />
+      </div>
+    );
+  }
+  if (idx === 2) {
+    return (
+      <div className="viz-tiles">
+        <Tile label="總手續費" value={money(m.total_fees_twd)} tone="down" />
+        <Tile label="每筆手續費" value={money(m.fee_per_close_twd)} />
+        <Tile label="佔毛利" value={nOrDash(m.fees_as_pct_of_gross, '%')} tone="down" />
+        <Tile label="淨實現" value={money(m.net_realized_twd)} tone={signTone(m.net_realized_twd)} />
+      </div>
+    );
+  }
+  // idx 3 攤平傾向 —— 兩段分佈條
+  const below = toNum(m.below_share_pct);
+  const belowN = toNum(m.adds_below_avg_cost) || 0;
+  const aboveN = toNum(m.adds_above_avg_cost) || 0;
+  return (
+    <div className="viz-beh-avg">
+      {Number.isFinite(below) && (
+        <div className="viz-dist">
+          <span className="viz-dist-seg below" style={{ width: `${below.toFixed(0)}%` }} />
+          <span className="viz-dist-seg above" style={{ width: `${(100 - below).toFixed(0)}%` }} />
+        </div>
+      )}
+      <div className="viz-beh-legend">
+        <span className="up">均價下加碼 {belowN} 筆</span>
+        <span className="down">均價上追高 {aboveN} 筆</span>
+      </div>
+    </div>
+  );
+}
+
+function Behavior({ d }: { d: BehaviorData }): ReactNode {
+  return (
+    <div className="viz-beh">
+      <div className="viz-beh-head">
+        {d.confidence === 'partial' && <span className="viz-badge warn">部分資料</span>}
+        <span className="viz-beh-sample">
+          分析 {d.analyzed}/{d.totalCloses} 筆平倉 · {d.findings} 項發現
+        </span>
+      </div>
+      {d.metrics.map((m, idx) => {
+        const ok = m.sample_ok !== false;
+        const title = typeof m.metric === 'string' ? m.metric : `維度 ${idx + 1}`;
+        const conclusion = typeof m.conclusion === 'string' ? m.conclusion : '';
+        return (
+          <div className="viz-beh-row" key={idx} data-ok={ok ? '1' : '0'}>
+            <div className="viz-beh-title">
+              {title}
+              {!ok && <span className="viz-beh-thin"> · 樣本不足</span>}
+            </div>
+            {ok && metricBody(m, idx)}
+            {ok && conclusion && <div className="viz-beh-note">{conclusion}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── 分派 ────────────────────────────────────────────────────
 /** tool_result 的 name → 一張圖表卡（未實作的工具回 null，由 AgentDock 略過不渲染）。 */
 export function chartSpecFor(tool: string, result: unknown): ReactNode {
@@ -214,7 +503,31 @@ export function chartSpecFor(tool: string, result: unknown): ReactNode {
         </Frame>
       );
     }
+    case 'get_max_accounts': {
+      const d = normAccounts(result);
+      return (
+        <Frame eyebrow="帳戶" title="資產配置" tag="MAX">
+          {d ? <Accounts d={d} /> : <Empty msg="帳戶沒有可顯示的餘額" />}
+        </Frame>
+      );
+    }
+    case 'get_trading_dna_score': {
+      const d = normDna(result);
+      return (
+        <Frame eyebrow="你的交易 DNA" title={d && d.archetype && !d.insufficient ? d.archetype : '交易性格側寫'} tag="帳本">
+          {d ? <DnaRadar d={d} /> : <Empty msg="這一輪沒有可畫的 DNA 資料" />}
+        </Frame>
+      );
+    }
+    case 'analyze_trading_behavior': {
+      const d = normBehavior(result);
+      return (
+        <Frame eyebrow="你的交易行為" title="行為偏誤體檢" tag="帳本">
+          {d ? <Behavior d={d} /> : <Empty msg="這一輪沒有可畫的行為資料" />}
+        </Frame>
+      );
+    }
     default:
-      return null; // 其餘 CHARTABLE 工具（帳戶/DNA/行為）待下一批實作
+      return null;
   }
 }

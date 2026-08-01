@@ -567,6 +567,57 @@
     font-family: var(--mono); font-size: 10px; color: var(--dim);
   }
 
+  /* C. 資產配置堆疊條 */
+  .viz-acct-note { font-size: 9px; color: var(--dim); margin-bottom: 4px; }
+  .viz-acct-bar { display: flex; height: 20px; border: 1px solid #1e2635; overflow: hidden; }
+  .viz-acct-seg { height: 100%; }
+  .viz-acct-legend { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+  .viz-acct-row { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; }
+  .viz-acct-cur { color: var(--txt); min-width: 42px; }
+  .viz-acct-amt { flex: 1; color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
+  .viz-acct-share { color: var(--txt); min-width: 42px; text-align: right; }
+
+  /* D. 交易 DNA 六軸雷達 */
+  .viz-radar { display: flex; flex-direction: column; align-items: center; }
+  .viz-radar-head { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-bottom: 2px; }
+  .viz-arche {
+    font-size: 12px; font-weight: 600; color: var(--violet);
+    border: 1px solid var(--violet); padding: 1px 6px;
+  }
+  .viz-tagchip { font-size: 9px; color: var(--dim); border: 1px solid #1e2635; padding: 1px 5px; }
+  .viz-warn { font-size: 11px; color: var(--rose); }
+  .viz-radar-svg { width: 100%; max-width: 220px; height: auto; }
+  .viz-radar-axis { fill: var(--dim); font-size: 9px; font-family: var(--font); }
+
+  /* E. 交易行為四維卡 */
+  .viz-beh { display: flex; flex-direction: column; gap: 8px; }
+  .viz-beh-head { display: flex; align-items: center; gap: 6px; }
+  .viz-badge { font-size: 9px; padding: 1px 5px; border: 1px solid var(--line); color: var(--dim); }
+  .viz-badge.warn { color: var(--amber); border-color: var(--amber); }
+  .viz-beh-sample { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+  .viz-beh-row { display: flex; flex-direction: column; gap: 4px; }
+  .viz-beh-row[data-ok='0'] { opacity: 0.5; }
+  .viz-beh-title { font-size: 12px; font-weight: 600; color: var(--txt); }
+  .viz-beh-thin { font-weight: 400; color: var(--dim); font-size: 10px; }
+  .viz-beh-note { font-size: 11px; color: var(--dim); }
+  .viz-tiles { display: flex; flex-wrap: wrap; gap: 4px; }
+  .viz-tile {
+    display: flex; flex-direction: column; gap: 1px; padding: 4px 8px;
+    background: #0d1420; border: 1px solid #1e2635; min-width: 66px;
+  }
+  .viz-tile-v { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--txt); font-variant-numeric: tabular-nums; }
+  .viz-tile-l { font-size: 9px; color: var(--dim); }
+  .viz-tile[data-tone='up'] .viz-tile-v { color: var(--green); }
+  .viz-tile[data-tone='down'] .viz-tile-v { color: var(--rose); }
+  .viz-tile[data-tone='warn'] .viz-tile-v { color: var(--amber); }
+  .viz-beh-avg { display: flex; flex-direction: column; gap: 3px; }
+  .viz-dist { display: flex; height: 14px; border: 1px solid #1e2635; overflow: hidden; }
+  .viz-dist-seg.below { background: var(--green); opacity: 0.6; }
+  .viz-dist-seg.above { background: var(--rose); opacity: 0.6; }
+  .viz-beh-legend { display: flex; justify-content: space-between; font-size: 10px; }
+  .viz-beh-legend .up { color: var(--green); }
+  .viz-beh-legend .down { color: var(--rose); }
+
   /* 直立手機：dock 改成整片蓋上來，功能條讓出高度給它 */
   @media (max-width: 560px) {
     .maia-dock { width: 100% !important; }
