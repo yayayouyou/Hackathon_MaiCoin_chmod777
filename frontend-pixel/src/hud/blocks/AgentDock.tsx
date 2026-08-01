@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { setViewInset } from '../../engine/viewport';
-import { ask, subscribeLive, toolLabel, useChat } from '../../ui/chatStore';
+import { ask, loadSessionInto, newConversation, subscribeLive, toolLabel, useChat } from '../../ui/chatStore';
 import { renderMarkdown } from '../../ui/markdown';
+import { listSessions, type SessionSummary } from '../../api/agent';
 import { closeChatDock, openChatDock, useDock } from '../dockStore';
 
 /**
@@ -47,6 +48,9 @@ const MODELS: ReadonlyArray<{ id: string; label: string }> = [
 const DEFAULT_MODEL = 'us.anthropic.claude-opus-4-5-20251101-v1:0';
 const MODEL_KEY = 'maia-model';
 
+/** ISO 時間 → 「MM-DD HH:mm」。不做 Date 解析，直接切字串（後端已是台北時間）。 */
+const fmtWhen = (iso: string): string => (iso || '').slice(5, 16).replace('T', ' ');
+
 function Elapsed({ busy }: { busy: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   // rAF 而不是 setInterval —— `hud/feeds.ts` 是全 app 唯一的 setInterval。
@@ -82,6 +86,23 @@ export function AgentDock() {
       return DEFAULT_MODEL;
     }
   });
+
+  // 歷史對話抽屜。清單在打開時才抓（後端 GET /api/sessions），不常駐輪詢。
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [histLoading, setHistLoading] = useState(false);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    let alive = true;
+    setHistLoading(true);
+    void listSessions()
+      .then((s) => alive && setSessions(s))
+      .finally(() => alive && setHistLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [historyOpen]);
 
   const liveRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -154,6 +175,15 @@ export function AgentDock() {
         <h2>MAIA</h2>
         <span className="maia-sub">{busy ? status || '連線中…' : '隨時待命'}</span>
         <Elapsed busy={busy} />
+        <button
+          className="maia-hist"
+          data-open={historyOpen ? '1' : '0'}
+          onClick={() => setHistoryOpen((v) => !v)}
+          title="歷史對話"
+          aria-label="歷史對話"
+        >
+          歷史
+        </button>
         <select
           className="maia-model"
           value={model}
@@ -188,6 +218,47 @@ export function AgentDock() {
           ✕
         </button>
       </header>
+
+      {historyOpen && (
+        <div className="maia-history" data-testid="history-drawer">
+          <div className="maia-history-head">
+            <button
+              className="btn"
+              onClick={() => {
+                newConversation();
+                setHistoryOpen(false);
+              }}
+            >
+              ＋ 新對話
+            </button>
+            <button className="maia-x" onClick={() => setHistoryOpen(false)} aria-label="關閉歷史">
+              ✕
+            </button>
+          </div>
+          <div className="maia-history-list">
+            {histLoading && <div className="chat-msg muted">載入中…</div>}
+            {!histLoading && sessions.length === 0 && (
+              <div className="chat-msg muted">還沒有歷史對話。開始聊天後會自動存檔。</div>
+            )}
+            {sessions.map((s) => (
+              <button
+                key={s.id}
+                className="maia-history-item"
+                title={s.title}
+                onClick={() => {
+                  void loadSessionInto(s.id);
+                  setHistoryOpen(false);
+                }}
+              >
+                <span className="maia-history-title">{s.title}</span>
+                <span className="maia-history-meta">
+                  {s.turns} 則 · {fmtWhen(s.updated)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="maia-thread">
         {msgs.map((m) =>

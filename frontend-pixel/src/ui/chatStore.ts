@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { streamChat, type AgentEvent, type ChatTurn } from '../api/agent';
+import { streamChat, loadSession, type AgentEvent, type ChatTurn } from '../api/agent';
 import { hud, type SourceTag, type ToolStep } from '../hud/channels';
 
 /**
@@ -121,6 +121,14 @@ function toolFailed(result: unknown): boolean {
 
 // ── 送出 ────────────────────────────────────────────────────
 
+// ── session 身分（歷史存檔用）─────────────────────────────
+// 每個對話一個 id（符合後端白名單 ^[A-Za-z0-9_-]{1,64}$）。送進 /api/chat 後端才會把
+// 整段存成可重播 session；不送就永遠不存 —— 這正是先前 sessions/ 一直是空的原因。
+function newSessionId(): string {
+  return `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+let currentSessionId = newSessionId();
+
 let abort: AbortController | null = null;
 
 /** dock 卸載時不呼叫這個 —— 收起 dock 不該中斷 agent，它會繼續查完。 */
@@ -231,7 +239,12 @@ export async function ask(question: string, model?: string): Promise<void> {
   };
 
   try {
-    await streamChat({ messages: history, model, signal: ac.signal }, onEvent);
+    await streamChat(
+      // persona:'auto' 讓後端自動依問題派角色（新手教練等），但前端不顯示大師 chip ——
+      // persona 當「隱形能力」留在後端。sessionId 讓後端把整段存成可重播歷史。
+      { messages: history, model, persona: 'auto', sessionId: currentSessionId, signal: ac.signal },
+      onEvent,
+    );
     // 串流結束但沒收到 final_answer（後端中途掛掉）→ 把暫顯的字收下來，
     // 不要讓使用者已經看到的字憑空消失
     if (live.trim()) {
@@ -255,4 +268,32 @@ export async function ask(question: string, model?: string): Promise<void> {
     emit({ busy: false, status: '' });
     pushHud('idle', '');
   }
+}
+
+/** 開一個新對話：清空畫面、換一個新 session id（下一輪就會存成新的歷史檔）。 */
+export function newConversation(): void {
+  cancel();
+  currentSessionId = newSessionId();
+  setLive('');
+  emit({ msgs: [GREETING], chips: [], status: '', approval: null, readerAlerts: [], busy: false });
+}
+
+/**
+ * 載入一段歷史 session 覆蓋目前對話（重播）。
+ * v1 只還原文字（使用者訊息 + 每輪的 final_answer）；工具晶片與圖表另案。
+ * 續存語意同舊 UI：載入後把 currentSessionId 設為該 session，接著講會接續存進同一檔。
+ */
+export async function loadSessionInto(id: string): Promise<void> {
+  const detail = await loadSession(id);
+  if (!detail) return;
+  const msgs: Msg[] = [GREETING];
+  let mid = 1;
+  for (const turn of detail.turns) {
+    if (turn.user) msgs.push({ id: mid++, who: 'me', text: turn.user });
+    const fa = turn.steps.find((s) => s.type === 'final_answer');
+    if (fa && fa.type === 'final_answer') msgs.push({ id: mid++, who: 'agent', text: fa.content });
+  }
+  currentSessionId = id;
+  setLive('');
+  emit({ msgs, chips: [], status: '', approval: null, readerAlerts: [], busy: false });
 }

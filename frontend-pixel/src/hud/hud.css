@@ -374,6 +374,68 @@
   }
   .maia-model:hover:not(:disabled) { color: var(--txt); border-color: var(--max); }
   .maia-model:disabled { opacity: 0.5; cursor: default; }
+
+  /* header 的「歷史」開關 */
+  .maia-hist {
+    flex: none;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    background: #10192b;
+    border: 1px solid #1e2635;
+    border-radius: 0;
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+  .maia-hist:hover { color: var(--txt); border-color: var(--max); }
+  .maia-hist[data-open='1'] { color: var(--max); border-color: var(--max); }
+
+  /* 歷史對話抽屜：覆蓋整個 dock（含 inset:0），有自己的頭部與清單 */
+  .maia-history {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    background: #0b0f18;
+  }
+  .maia-history-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #1e2635;
+  }
+  .maia-history-head .btn { flex: 1; font-size: 12px; }
+  .maia-history-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .maia-history-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    text-align: left;
+    color: var(--txt);
+    background: var(--panel-2);
+    border: 1px solid #1e2635;
+    border-radius: 0;
+    cursor: pointer;
+  }
+  .maia-history-item:hover { border-color: var(--max); }
+  .maia-history-title {
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .maia-history-meta { font-family: var(--mono); font-size: 10px; color: var(--dim); }
   .maia-dot {
     width: 8px;
     height: 8px;

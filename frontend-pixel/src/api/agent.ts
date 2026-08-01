@@ -186,3 +186,53 @@ export async function getHealth(signal?: AbortSignal): Promise<Health | null> {
     return null;   // 後端沒開就是沒開，不要讓它變成畫面上的紅字
   }
 }
+
+// ── 歷史對話 session（重播）────────────────────────────────
+// 後端端點早就做好（GET /api/sessions、GET /api/session/{id}），存哪由後端決定
+// （dev 本地檔、部署走 S3）。前端只要打這兩支即可，後端沒開就回空/null，不噴紅字。
+
+export type SessionSummary = { id: string; title: string; updated: string; turns: number };
+
+/** 一則可重播 step，對齊後端 conversation_log 的 _REPLAY_TYPES。 */
+export type ReplayStep =
+  | { type: 'persona'; key: string; name: string; icon: string }
+  | { type: 'tool_call'; name: string; args?: Record<string, unknown> }
+  | { type: 'tool_result'; name: string; result?: unknown }
+  | { type: 'final_answer'; content: string };
+
+export type SessionTurn = {
+  ts: string;
+  user: string;
+  model?: string;
+  persona?: string;
+  steps: ReplayStep[];
+};
+export type SessionDetail = {
+  id: string;
+  title: string;
+  created?: string;
+  updated?: string;
+  turns: SessionTurn[];
+};
+
+/** 列出歷史 session 摘要（新到舊）。後端沒開就回空陣列。 */
+export async function listSessions(signal?: AbortSignal): Promise<SessionSummary[]> {
+  try {
+    const res = await fetch('/api/sessions?limit=100', { signal: signal ?? null });
+    if (!res.ok) return [];
+    return ((await res.json()) as { sessions?: SessionSummary[] }).sessions ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** 讀取單一 session 完整內容供重播。找不到回 null。 */
+export async function loadSession(id: string, signal?: AbortSignal): Promise<SessionDetail | null> {
+  try {
+    const res = await fetch(`/api/session/${encodeURIComponent(id)}`, { signal: signal ?? null });
+    if (!res.ok) return null;
+    return (await res.json()) as SessionDetail;
+  } catch {
+    return null;
+  }
+}
