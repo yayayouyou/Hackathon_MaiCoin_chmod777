@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { setViewInset } from '../../engine/viewport';
+import type { ReactNode } from 'react';
 import {
   ask,
   loadSessionInto,
@@ -8,11 +9,33 @@ import {
   toolLabel,
   toolSource,
   useChat,
+  type ChartItem,
 } from '../../ui/chatStore';
 import { renderMarkdown } from '../../ui/markdown';
-import { chartSpecFor } from '../../ui/vizCards';
+import { chartSpecFor, planAgentBody } from '../../ui/vizCards';
 import { listSessions, type SessionSummary } from '../../api/agent';
 import { closeChatDock, openChatDock, useDock } from '../dockStore';
+
+/** 把一則帶圖表的 agent 答案渲染成「文字 markdown + 圖表卡」交錯的節點（規劃見 vizCards.planAgentBody）。 */
+function renderAgentBody(text: string, charts: ChartItem[]): ReactNode {
+  return (
+    <>
+      {planAgentBody(text, charts).map((p, i) => {
+        if (p.kind === 'text') {
+          return (
+            <div key={i} className="chat-msg chat-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(p.text) }} />
+          );
+        }
+        const node = chartSpecFor(p.item.tool, p.item.result);
+        return node ? (
+          <div key={i} className="maia-viz" data-src={toolSource(p.item.tool)}>
+            {node}
+          </div>
+        ) : null;
+      })}
+    </>
+  );
+}
 
 /**
  * MAIA 側邊 dock —— **非模態**。世界在它旁邊繼續跑。
@@ -276,8 +299,13 @@ export function AgentDock() {
             <div key={m.id} className="chat-msg me">
               {m.text}
             </div>
+          ) : m.charts && m.charts.length > 0 ? (
+            // 帶圖表的答案：文字與圖表卡依 [圖表] 錨點交錯（無錨點則圖排在文字後）
+            <div key={m.id} className="chat-agent">
+              {renderAgentBody(m.text, m.charts)}
+            </div>
           ) : (
-            // MAIA 的回答渲染 markdown。renderMarkdown 先 escape 再套白名單標籤，
+            // 一般答案：渲染 markdown。renderMarkdown 先 escape 再套白名單標籤，
             // 輸出可安全餵給 dangerouslySetInnerHTML（見 ui/markdown.ts 的安全模型）。
             <div
               key={m.id}

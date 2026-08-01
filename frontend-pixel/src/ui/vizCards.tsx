@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { ChartItem } from './chatStore';
 
 /**
  * 圖表卡（第一層：零相依 CSS/SVG）。
@@ -483,6 +484,76 @@ function Behavior({ d }: { d: BehaviorData }): ReactNode {
   );
 }
 
+// ── F. K 線蠟燭圖（get_max_klines）— 第二層，SVG rect 天生像素感 ──
+// 後端回陣列：[[ts秒, open, high, low, close, volume], ...]（MAX 原始，皆可能是數字或字串）。
+type Candle = { o: number; h: number; l: number; c: number };
+export type KlineData = { candles: Candle[]; lo: number; hi: number; last: number; up: boolean };
+
+export function normKline(result: unknown): KlineData | null {
+  if (!Array.isArray(result) || result.length === 0) return null;
+  const rows = result
+    .filter((r): r is unknown[] => Array.isArray(r) && r.length >= 5)
+    .map((r) => ({ o: toNum(r[1]), h: toNum(r[2]), l: toNum(r[3]), c: toNum(r[4]) }))
+    .filter((k) => [k.o, k.h, k.l, k.c].every(Number.isFinite) && k.h > 0);
+  if (rows.length === 0) return null;
+  const candles = rows.slice(-48); // 最近 48 根，夠密又不糊
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const k of candles) {
+    lo = Math.min(lo, k.l);
+    hi = Math.max(hi, k.h);
+  }
+  const last = candles[candles.length - 1]!;
+  return { candles, lo, hi, last: last.c, up: last.c >= last.o };
+}
+
+const fmtP = (n: number): string => n.toLocaleString('en-US', { maximumFractionDigits: n >= 100 ? 0 : 2 });
+
+function Candles({ d }: { d: KlineData }): ReactNode {
+  const W = 220;
+  const H = 120;
+  const padT = 6;
+  const padR = 48;
+  const plotL = 2;
+  const plotW = W - padR - plotL;
+  const plotH = H - padT * 2;
+  const range = Math.max(1e-9, d.hi - d.lo);
+  const y = (p: number): number => padT + (1 - (p - d.lo) / range) * plotH;
+  const cw = plotW / d.candles.length;
+  const bw = Math.max(1, cw * 0.6);
+  const lastCol = d.up ? '#4ee88a' : '#ff4f78';
+  return (
+    <div className="viz-kline">
+      <svg viewBox={`0 0 ${W} ${H}`} className="viz-kline-svg" role="img" aria-label="K 線">
+        {d.candles.map((k, i) => {
+          const cx = plotL + cw * (i + 0.5);
+          const col = k.c >= k.o ? '#4ee88a' : '#ff4f78';
+          const top = Math.min(y(k.o), y(k.c));
+          const hgt = Math.max(1, Math.abs(y(k.c) - y(k.o)));
+          return (
+            <g key={i}>
+              <line x1={cx.toFixed(1)} y1={y(k.h).toFixed(1)} x2={cx.toFixed(1)} y2={y(k.l).toFixed(1)} stroke={col} strokeWidth={1} />
+              <rect x={(cx - bw / 2).toFixed(1)} y={top.toFixed(1)} width={bw.toFixed(1)} height={hgt.toFixed(1)} fill={col} />
+            </g>
+          );
+        })}
+        <line
+          x1={plotL}
+          y1={y(d.last).toFixed(1)}
+          x2={W - padR}
+          y2={y(d.last).toFixed(1)}
+          stroke={lastCol}
+          strokeWidth={0.5}
+          strokeDasharray="2 2"
+        />
+        <text x={W - padR + 3} y={(y(d.hi) + 6).toFixed(1)} className="viz-kline-axis">{fmtP(d.hi)}</text>
+        <text x={W - padR + 3} y={(y(d.lo) - 1).toFixed(1)} className="viz-kline-axis">{fmtP(d.lo)}</text>
+        <text x={W - padR + 3} y={(y(d.last) + 3).toFixed(1)} className="viz-kline-last" fill={lastCol}>{fmtP(d.last)}</text>
+      </svg>
+    </div>
+  );
+}
+
 // ── 分派 ────────────────────────────────────────────────────
 /** tool_result 的 name → 一張圖表卡（未實作的工具回 null，由 AgentDock 略過不渲染）。 */
 export function chartSpecFor(tool: string, result: unknown): ReactNode {
@@ -527,7 +598,52 @@ export function chartSpecFor(tool: string, result: unknown): ReactNode {
         </Frame>
       );
     }
+    case 'get_max_klines': {
+      const d = normKline(result);
+      return (
+        <Frame eyebrow="行情" title="K 線" tag="MAX">
+          {d ? <Candles d={d} /> : <Empty msg="這一輪沒有可畫的 K 線資料" />}
+        </Frame>
+      );
+    }
     default:
       return null;
   }
+}
+
+// ── 答案內嵌圖表：[圖表] / [圖表:工具名] 錨點規劃（純函式，好測）─────
+/** answer 裡的 [圖表] / [圖表:工具名] 錨點。後端 prompt 已教 LLM 產出（agent/prompts.py）。 */
+export const CHART_ANCHOR = /\[圖表(?::([a-zA-Z_]+))?\]/g;
+
+export type BodyPart = { kind: 'text'; text: string } | { kind: 'chart'; item: ChartItem };
+
+/**
+ * 把一則答案文字 + 本輪圖表卡，規劃成「文字 / 圖表」交錯的順序清單。
+ * [圖表] 消化下一張未用的圖；[圖表:工具名] 指名該工具的圖；沒被錨點消化的圖表附在最後
+ * （同舊 UI：無錨點時圖排在文字之後）。純資料轉換、不碰 React，方便單元測試。
+ */
+export function planAgentBody(text: string, charts: ChartItem[]): BodyPart[] {
+  const used = new Set<number>();
+  const pick = (tool: string | null): ChartItem | null => {
+    const idx = charts.findIndex((c, i) => !used.has(i) && (tool === null || c.tool === tool));
+    if (idx < 0) return null;
+    used.add(idx);
+    return charts[idx] ?? null;
+  };
+  const parts: BodyPart[] = [];
+  let last = 0;
+  for (const m of text.matchAll(CHART_ANCHOR)) {
+    const at = m.index ?? 0;
+    const seg = text.slice(last, at);
+    if (seg.trim()) parts.push({ kind: 'text', text: seg });
+    const c = pick(m[1] ?? null);
+    if (c) parts.push({ kind: 'chart', item: c });
+    last = at + (m[0] ?? '').length;
+  }
+  const tail = text.slice(last);
+  if (tail.trim()) parts.push({ kind: 'text', text: tail });
+  charts.forEach((c, i) => {
+    if (!used.has(i)) parts.push({ kind: 'chart', item: c });
+  });
+  return parts;
 }

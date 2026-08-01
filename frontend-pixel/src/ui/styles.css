@@ -597,6 +597,8 @@ input:focus, textarea:focus { border-color: var(--cyan); }
 .chat-msg.me { margin-left: auto; background: #10283a; border-color: #1a5c78; }
 /* 純文字氣泡（使用者訊息、串流中的暫顯字）保留換行，別被 HTML 折成一坨 */
 .chat-msg:not(.chat-md) { white-space: pre-wrap; }
+/* 帶圖表的答案：文字氣泡與圖表卡交錯排列的容器 */
+.chat-agent { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 
 /* MAIA 回答的 markdown 排版（renderMarkdown 產生的白名單 HTML；直角、貼齊像素語彙） */
 .chat-md > :first-child { margin-top: 0; }

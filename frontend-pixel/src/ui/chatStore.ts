@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { streamChat, loadSession, type AgentEvent, type ChatTurn } from '../api/agent';
+import { streamChat, loadSession, type AgentEvent, type ChatTurn, type ReplayStep } from '../api/agent';
 import { hud, type SourceTag, type ToolStep } from '../hud/channels';
 
 /**
@@ -15,7 +15,8 @@ import { hud, type SourceTag, type ToolStep } from '../hud/channels';
  * 通道，由 dock 直接寫 `ref.textContent`，收完（final_answer）才進歷史。
  */
 
-export type Msg = { id: number; who: 'agent' | 'me'; text: string };
+/** charts：這則答案本輪產生的圖表卡快照（嵌入答案 + 歷史重播用）。 */
+export type Msg = { id: number; who: 'agent' | 'me'; text: string; charts?: ChartItem[] };
 export type Chip = { id: number; name: string; source: SourceTag; ok: boolean | null };
 /** reader 攔截到疑似指令注入時留下的常駐警示（來源工具 + 命中的旗標名）。 */
 export type ReaderAlert = { id: number; source: string; flags: string[] };
@@ -91,6 +92,8 @@ function setLive(s: string): void {
 const TOOLS: Record<string, { label: string; source: SourceTag }> = {
   get_max_ticker: { label: 'MAX 行情', source: 'max' },
   get_max_kline: { label: 'MAX K 線', source: 'max' },
+  get_max_klines: { label: 'MAX K 線', source: 'max' }, // 後端實際工具名是複數
+
   get_max_depth: { label: 'MAX 訂單簿', source: 'max' },
   get_max_accounts: { label: 'MAX 帳戶餘額', source: 'max' },
   get_max_my_trades: { label: 'MAX 成交紀錄', source: 'max' },
@@ -121,6 +124,7 @@ const CHARTABLE_TOOLS = new Set<string>([
   'get_max_accounts',
   'get_trading_dna_score',
   'analyze_trading_behavior',
+  'get_max_klines', // 第二層：K 線蠟燭圖
 ]);
 
 /**
@@ -250,10 +254,16 @@ export async function ask(question: string, model?: string): Promise<void> {
       case 'approval_request':
         emit({ approval: { summary: e.summary, hash: e.hash } });
         break;
-      case 'final_answer':
+      case 'final_answer': {
+        // 把本輪的圖表卡快照進這則訊息（供嵌入答案 [圖表] 錨點 + 歷史重播），並清空 live
+        const turnCharts = state.charts;
         setLive('');
-        emit({ msgs: [...state.msgs, { id: Date.now(), who: 'agent', text: e.content }] });
+        emit({
+          msgs: [...state.msgs, { id: Date.now(), who: 'agent', text: e.content, charts: turnCharts }],
+          charts: [],
+        });
         break;
+      }
       case 'error':
         setLive('');
         emit({ msgs: [...state.msgs, { id: Date.now(), who: 'agent', text: `⚠ ${e.content}` }] });
@@ -275,8 +285,9 @@ export async function ask(question: string, model?: string): Promise<void> {
     // 不要讓使用者已經看到的字憑空消失
     if (live.trim()) {
       const t = live;
+      const turnCharts = state.charts;
       setLive('');
-      emit({ msgs: [...state.msgs, { id: Date.now(), who: 'agent', text: t }] });
+      emit({ msgs: [...state.msgs, { id: Date.now(), who: 'agent', text: t, charts: turnCharts }], charts: [] });
     }
   } catch (err) {
     if (!ac.signal.aborted) {
@@ -317,7 +328,12 @@ export async function loadSessionInto(id: string): Promise<void> {
   for (const turn of detail.turns) {
     if (turn.user) msgs.push({ id: mid++, who: 'me', text: turn.user });
     const fa = turn.steps.find((s) => s.type === 'final_answer');
-    if (fa && fa.type === 'final_answer') msgs.push({ id: mid++, who: 'agent', text: fa.content });
+    // 重播含圖表：掃這一輪的 tool_result，可畫圖的重建成 charts 掛到答案上
+    const charts: ChartItem[] = turn.steps
+      .filter((s): s is Extract<ReplayStep, { type: 'tool_result' }> => s.type === 'tool_result')
+      .filter((s) => CHARTABLE_TOOLS.has(s.name))
+      .map((s, i) => ({ id: i, tool: s.name, result: s.result }));
+    if (fa && fa.type === 'final_answer') msgs.push({ id: mid++, who: 'agent', text: fa.content, charts });
   }
   currentSessionId = id;
   setLive('');

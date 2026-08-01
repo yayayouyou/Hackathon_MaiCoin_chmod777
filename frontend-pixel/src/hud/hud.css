@@ -618,6 +618,11 @@
   .viz-beh-legend .up { color: var(--green); }
   .viz-beh-legend .down { color: var(--rose); }
 
+  /* F. K 線蠟燭圖 */
+  .viz-kline-svg { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
+  .viz-kline-axis { fill: var(--dim); font-family: var(--mono); font-size: 8px; }
+  .viz-kline-last { font-family: var(--mono); font-size: 9px; font-weight: 700; }
+
   /* 直立手機：dock 改成整片蓋上來，功能條讓出高度給它 */
   @media (max-width: 560px) {
     .maia-dock { width: 100% !important; }
