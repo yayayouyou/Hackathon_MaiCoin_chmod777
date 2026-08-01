@@ -17,6 +17,8 @@ import { hud, type SourceTag, type ToolStep } from '../hud/channels';
 
 export type Msg = { id: number; who: 'agent' | 'me'; text: string };
 export type Chip = { id: number; name: string; source: SourceTag; ok: boolean | null };
+/** reader 攔截到疑似指令注入時留下的常駐警示（來源工具 + 命中的旗標名）。 */
+export type ReaderAlert = { id: number; source: string; flags: string[] };
 
 export type ChatState = {
   msgs: Msg[];
@@ -24,6 +26,7 @@ export type ChatState = {
   status: string;
   busy: boolean;
   approval: { summary: string; hash: string } | null;
+  readerAlerts: ReaderAlert[];
 };
 
 const GREETING: Msg = {
@@ -32,7 +35,14 @@ const GREETING: Msg = {
   text: '我是 MAIA。你可以問我行情、你自己的交易紀錄，或是「如果當初…會怎樣」。我會自己去查資料再回答。',
 };
 
-let state: ChatState = { msgs: [GREETING], chips: [], status: '', busy: false, approval: null };
+let state: ChatState = {
+  msgs: [GREETING],
+  chips: [],
+  status: '',
+  busy: false,
+  approval: null,
+  readerAlerts: [],
+};
 
 const subs = new Set<() => void>();
 const emit = (patch: Partial<ChatState>): void => {
@@ -96,6 +106,19 @@ const TOOLS: Record<string, { label: string; source: SourceTag }> = {
 export const toolLabel = (n: string): string => TOOLS[n]?.label ?? n;
 export const toolSource = (n: string): SourceTag => TOOLS[n]?.source ?? 'local';
 
+/**
+ * 工具是否失敗。後端執行失敗時 tool_result 的 result 會是 `{ error: ... }`
+ * （見 agent/ollama_agent.py:303,315）。過去前端一律當成功、把失敗吞掉。
+ */
+function toolFailed(result: unknown): boolean {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    'error' in result &&
+    Boolean((result as { error?: unknown }).error)
+  );
+}
+
 // ── 送出 ────────────────────────────────────────────────────
 
 let abort: AbortController | null = null;
@@ -117,7 +140,7 @@ function pushHud(phase: 'thinking' | 'tool' | 'answering' | 'idle' | 'error', no
   hud.agent.set({ phase, steps, note, elapsed: 0 });
 }
 
-export async function ask(question: string): Promise<void> {
+export async function ask(question: string, model?: string): Promise<void> {
   const q = question.trim();
   if (!q || state.busy) return;
 
@@ -134,6 +157,7 @@ export async function ask(question: string): Promise<void> {
     chips: [],
     status: '',
     approval: null,
+    readerAlerts: [],
     busy: true,
   });
   pushHud('thinking', '讀題中…');
@@ -160,14 +184,26 @@ export async function ask(question: string): Promise<void> {
         const i = state.chips.findIndex((x) => x.name === e.name && x.ok === null);
         if (i < 0) break;
         const next = [...state.chips];
-        next[i] = { ...next[i]!, ok: true };
+        // 讀 result.error 決定 ✓/✗，別再把工具失敗一律當成功吞掉
+        next[i] = { ...next[i]!, ok: !toolFailed(e.result) };
         emit({ chips: next });
         pushHud('tool', toolLabel(e.name));
         break;
       }
       case 'reader':
-        // AI 設計分的免費得分點：把「攔截了什麼」講出來，而不是靜靜地過濾掉
-        if (e.injection_detected) emit({ status: `已攔截疑似指令注入（來源：${toolLabel(e.name)}）` });
+        // AI 設計分的免費得分點：把「攔截了什麼」留成常駐警示卡，而不是一閃即逝的 status
+        if (e.injection_detected) {
+          emit({
+            readerAlerts: [
+              ...state.readerAlerts,
+              {
+                id: state.readerAlerts.length,
+                source: e.name,
+                flags: (e.flags ?? []).map((f) => f.label),
+              },
+            ],
+          });
+        }
         break;
       case 'answer_delta':
         setLive(live + e.content);
@@ -195,7 +231,7 @@ export async function ask(question: string): Promise<void> {
   };
 
   try {
-    await streamChat({ messages: history, signal: ac.signal }, onEvent);
+    await streamChat({ messages: history, model, signal: ac.signal }, onEvent);
     // 串流結束但沒收到 final_answer（後端中途掛掉）→ 把暫顯的字收下來，
     // 不要讓使用者已經看到的字憑空消失
     if (live.trim()) {

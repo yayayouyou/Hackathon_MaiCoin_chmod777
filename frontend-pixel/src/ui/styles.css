@@ -595,6 +595,32 @@ input:focus, textarea:focus { border-color: var(--cyan); }
   border: 1px solid var(--line);
 }
 .chat-msg.me { margin-left: auto; background: #10283a; border-color: #1a5c78; }
+/* 純文字氣泡（使用者訊息、串流中的暫顯字）保留換行，別被 HTML 折成一坨 */
+.chat-msg:not(.chat-md) { white-space: pre-wrap; }
+
+/* MAIA 回答的 markdown 排版（renderMarkdown 產生的白名單 HTML；直角、貼齊像素語彙） */
+.chat-md > :first-child { margin-top: 0; }
+.chat-md > :last-child { margin-bottom: 0; }
+.chat-md p { margin: 0 0 8px; }
+.chat-md h3, .chat-md h4, .chat-md h5, .chat-md h6 {
+  margin: 10px 0 6px; font-size: 13px; font-weight: 600; color: var(--txt);
+}
+.chat-md ul, .chat-md ol { margin: 0 0 8px; padding-left: 20px; }
+.chat-md li { margin: 2px 0; }
+.chat-md strong { font-weight: 600; color: var(--txt); }
+.chat-md a { color: var(--cyan); text-decoration: underline; }
+.chat-md code { font-family: var(--mono); font-size: 12px; background: #0d1420; padding: 1px 4px; }
+/* 長程式碼在 340px 的 dock 內自行捲動，不要把整個 dock 撐爆 */
+.chat-md pre {
+  margin: 0 0 8px; padding: 8px 10px; background: #0d1420;
+  border: 1px solid var(--line); overflow-x: auto;
+}
+.chat-md pre code { background: none; padding: 0; }
+/* 表格：外層 wrap 水平捲動，長表格不撐爆 340px 的 dock */
+.chat-md .md-tablewrap { overflow-x: auto; margin: 0 0 8px; }
+.chat-md table { border-collapse: collapse; font-size: 12px; }
+.chat-md th, .chat-md td { padding: 4px 8px; border: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.chat-md th { background: #0d1420; color: var(--txt); font-weight: 600; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .chip {

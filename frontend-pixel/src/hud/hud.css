@@ -359,6 +359,21 @@
     white-space: nowrap;
   }
   .maia-elapsed { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  /* header 的模型下拉：直角硬邊，跟晶片同一套像素語彙 */
+  .maia-model {
+    flex: none;
+    max-width: 96px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    background: #10192b;
+    border: 1px solid #1e2635;
+    border-radius: 0;
+    padding: 2px 4px;
+    cursor: pointer;
+  }
+  .maia-model:hover:not(:disabled) { color: var(--txt); border-color: var(--max); }
+  .maia-model:disabled { opacity: 0.5; cursor: default; }
   .maia-dot {
     width: 8px;
     height: 8px;
@@ -399,7 +414,21 @@
   .maia-chip[data-src='max']    { border-color: var(--max); color: var(--max); }
   .maia-chip[data-src='market'] { border-color: var(--cyan); color: var(--cyan); }
   .maia-chip[data-src='news']   { border-color: var(--amber); color: var(--amber); }
-  .maia-chip[data-ok='0']       { opacity: 0.55; }
+  /* 狀態疊在來源色之上（同特異度靠順序在後者勝出）：進行中變淡、失敗轉紅 */
+  .maia-chip[data-state='pending'] { opacity: 0.6; }
+  .maia-chip[data-state='fail'] {
+    border-color: var(--rose);
+    color: var(--rose);
+    opacity: 1;
+  }
+  /* 晶片內的小轉圈（沿用 .spinner，只縮小尺寸） */
+  .chip-spin {
+    width: 9px;
+    height: 9px;
+    border-width: 1.5px;
+    margin-right: 4px;
+    vertical-align: -1px;
+  }
 
   .maia-approval {
     padding: 10px;
@@ -408,6 +437,16 @@
     border: 2px solid #0a0c12;
     box-shadow: inset 0 0 0 1px var(--amber);
   }
+
+  /* reader 注入攔截警示：rose 色調，跟核准卡（琥珀）區隔開來 */
+  .maia-reader {
+    padding: 10px;
+    font-size: 12px;
+    background: #1c0d12;
+    border: 2px solid #0a0c12;
+    box-shadow: inset 0 0 0 1px var(--rose);
+  }
+  .maia-reader strong { color: var(--rose); }
 
   /* 直立手機：dock 改成整片蓋上來，功能條讓出高度給它 */
   @media (max-width: 560px) {

@@ -31,7 +31,14 @@ export type AgentEvent =
   | { type: 'tool_call'; name: string; args?: Record<string, unknown> }
   | { type: 'tool_result'; name: string; result?: unknown }
   /** Reader 淨化層。`injection_detected` 為 true 時值得在畫面上講出來 */
-  | { type: 'reader'; name: string; injection_detected?: boolean; flags?: string[]; reader_used?: boolean }
+  | {
+      type: 'reader';
+      name: string;
+      injection_detected?: boolean;
+      // 後端（reader_agent.py）送的是 {label, snippet} 物件陣列，不是 string[]
+      flags?: { label: string; snippet: string }[];
+      reader_used?: boolean;
+    }
   /** 下單互鎖：模型只能提議，要使用者按下確認才會執行 */
   | { type: 'approval_request'; name: string; token: string; plan: unknown; hash: string; summary: string }
   | { type: 'answer_delta'; content: string }

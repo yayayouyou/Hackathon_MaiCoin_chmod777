@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { setViewInset } from '../../engine/viewport';
 import { ask, subscribeLive, toolLabel, useChat } from '../../ui/chatStore';
+import { renderMarkdown } from '../../ui/markdown';
 import { closeChatDock, openChatDock, useDock } from '../dockStore';
 
 /**
@@ -31,6 +32,21 @@ const SUGGESTIONS = [
 /** dock 展開時的寬度。同一個數字要餵給鏡頭，否則角色會躲進 dock 底下。 */
 const DOCK_W = 340;
 
+/**
+ * 這個 workshop 帳號實測可用的 Claude 模型（opus-5/opus-4-8/sonnet-5 未授權）。
+ * 清單寫死即可 —— 帳號授權在活動期間固定，不值得為它多開一個 /api/models 的
+ * bedrock 分支。選到的 id 原封不動送進 POST /api/chat，後端 factory 認得含
+ * anthropic/claude 的 id（見 agent/llm/factory.py）。
+ */
+const MODELS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'us.anthropic.claude-opus-4-5-20251101-v1:0', label: 'Opus 4.5' },
+  { id: 'us.anthropic.claude-sonnet-4-6', label: 'Sonnet 4.6' },
+  { id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Sonnet 4.5' },
+  { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Haiku 4.5' },
+];
+const DEFAULT_MODEL = 'us.anthropic.claude-opus-4-5-20251101-v1:0';
+const MODEL_KEY = 'maia-model';
+
 function Elapsed({ busy }: { busy: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   // rAF 而不是 setInterval —— `hud/feeds.ts` 是全 app 唯一的 setInterval。
@@ -56,8 +72,16 @@ function Elapsed({ busy }: { busy: boolean }) {
 
 export function AgentDock() {
   const { chat: open } = useDock();
-  const { msgs, chips, status, busy, approval } = useChat();
+  const { msgs, chips, status, busy, approval, readerAlerts } = useChat();
   const [text, setText] = useState('');
+  // 選到的模型記在 localStorage，重整/收合再開都還在。無痕模式讀寫失敗就退回預設。
+  const [model, setModel] = useState<string>(() => {
+    try {
+      return localStorage.getItem(MODEL_KEY) ?? DEFAULT_MODEL;
+    } catch {
+      return DEFAULT_MODEL;
+    }
+  });
 
   const liveRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -108,9 +132,9 @@ export function AgentDock() {
   const send = useCallback(
     (q: string) => {
       setText('');
-      void ask(q);
+      void ask(q, model);
     },
-    [],
+    [model],
   );
 
   if (!open) {
@@ -130,6 +154,28 @@ export function AgentDock() {
         <h2>MAIA</h2>
         <span className="maia-sub">{busy ? status || '連線中…' : '隨時待命'}</span>
         <Elapsed busy={busy} />
+        <select
+          className="maia-model"
+          value={model}
+          disabled={busy}
+          title="切換 AI 模型（Opus 最強、Sonnet 平衡、Haiku 最快）"
+          aria-label="切換 AI 模型"
+          onChange={(e) => {
+            const id = e.target.value;
+            setModel(id);
+            try {
+              localStorage.setItem(MODEL_KEY, id);
+            } catch {
+              /* 無痕/隱私模式讀寫 localStorage 會丟；只在記憶體記著即可 */
+            }
+          }}
+        >
+          {MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
         <button
           className="maia-x"
           onClick={() => {
@@ -144,11 +190,22 @@ export function AgentDock() {
       </header>
 
       <div className="maia-thread">
-        {msgs.map((m) => (
-          <div key={m.id} className={`chat-msg${m.who === 'me' ? ' me' : ''}`}>
-            {m.text}
-          </div>
-        ))}
+        {msgs.map((m) =>
+          m.who === 'me' ? (
+            // 使用者自己打的字維持純文字（React 會 escape），不當 markdown 解析
+            <div key={m.id} className="chat-msg me">
+              {m.text}
+            </div>
+          ) : (
+            // MAIA 的回答渲染 markdown。renderMarkdown 先 escape 再套白名單標籤，
+            // 輸出可安全餵給 dangerouslySetInnerHTML（見 ui/markdown.ts 的安全模型）。
+            <div
+              key={m.id}
+              className="chat-msg chat-md"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
+            />
+          ),
+        )}
 
         <div
           className="chat-msg"
@@ -164,15 +221,25 @@ export function AgentDock() {
                 key={c.id}
                 className="chip maia-chip"
                 data-src={c.source}
-                data-ok={c.ok === true ? '1' : '0'}
+                data-state={c.ok === null ? 'pending' : c.ok ? 'ok' : 'fail'}
                 title={`${toolLabel(c.name)} · _source: ${c.source} · ${c.name}`}
               >
-                {c.ok === null ? '◌ ' : '✓ '}
+                {c.ok === null ? <span className="spinner chip-spin" /> : c.ok ? '✓ ' : '✗ '}
                 {toolLabel(c.name)}
               </span>
             ))}
           </div>
         )}
+
+        {readerAlerts.map((a) => (
+          <div key={a.id} className="maia-reader" data-testid="reader-alert">
+            <strong>⚠ 已攔截疑似指令注入</strong>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+              來源：{toolLabel(a.source)}
+              {a.flags.length > 0 ? ` · 命中：${a.flags.join('、')}` : ''}
+            </div>
+          </div>
+        ))}
 
         {approval && (
           <div className="maia-approval" data-testid="approval-card">
