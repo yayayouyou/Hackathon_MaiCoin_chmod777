@@ -1,0 +1,23 @@
+# Amazon Bedrock AgentCore Runtime 容器（合約：ARM64、host 0.0.0.0、port 8080）
+# build:  docker buildx build --platform linux/arm64 -f deploy/Dockerfile.agentcore -t maia-agentcore .
+FROM --platform=linux/arm64 python:3.12-slim
+
+WORKDIR /app
+
+# 系統相依（部分套件如 numpy/pandas 需要）
+RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# 大腦用 Bedrock Claude（憑證由 AgentCore/IAM 角色提供）；語意路由用強模型 → 放寬候選集
+ENV LLM_PROVIDER=bedrock \
+    AGENT_TOOL_K_SCALE=2 \
+    ROUTING_LOG=1 \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 8080
+CMD ["uvicorn", "deploy.agentcore_app:app", "--host", "0.0.0.0", "--port", "8080"]

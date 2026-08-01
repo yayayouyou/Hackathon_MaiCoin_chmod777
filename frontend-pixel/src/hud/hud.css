@@ -1,0 +1,417 @@
+/* 順序宣告重複寫一次是刻意的：無論 hud.css 先被誰 import，層級順序都固定，
+   「hud.css 必須在 styles.css 之後 import 才能覆寫 .scene-title」這種脆弱
+   設計就不存在了。@layer 的順序宣告是冪等的。 */
+@layer core, zone, hud, pro;
+
+@layer hud {
+  /*
+   * ★ z-index 契約（規格 §3.1 是唯一那張表，改這裡必須同步改那裡）
+   *
+   *   z   節點                     誰在寫                更新頻率
+   *   ──  ───────────────────────  ────────────────────  ──────────────
+   *   0   #stage > canvas#screen   game/render.ts        每幀 60fps
+   *   0   #stage > #world-labels   game/worldLabels.ts   每幀（含 diff）
+   *   5   #ui-root .hud            React（靜態）          永不
+   *   6   #hud-root                React 骨架 + LiveText  骨架人類速度／數值每幀
+   *   8   #hud-root .deck          React                  開關
+   *  10   #ui-root .backdrop       React                  開關（最上層）
+   */
+  #hud-root {
+    position: fixed;
+    inset: 0;
+    z-index: 6;
+    /* 整層不吃指標事件，否則這塊透明的滿版 div 會把畫布的點擊全部吞掉，
+       角色再也走不動。要互動的區塊自己在下面那條規則裡把它開回來。 */
+    pointer-events: none;
+  }
+
+  #hud-root > * {
+    pointer-events: auto;
+  }
+
+  /* Deck 蓋得住 HUD，但蓋不住 .backdrop（z-index 10）。 */
+  #hud-root .deck {
+    position: fixed;
+    z-index: 8;
+  }
+
+  /*
+   * 像素風的共用語彙。
+   *
+   * 兩件事撐起「這是遊戲 UI 而不是網頁 UI」的感覺，而且都不用圖檔：
+   * ① 直角。整份 HUD 沒有一個 border-radius —— 圓角是網頁的語言，
+   *    像素世界裡沒有次像素，圓角一放大就是階梯。
+   * ② 硬邊的雙層框：外框深、內框亮一階，模擬 2D 遊戲的斜面。用
+   *    box-shadow 的 inset 疊，不用多一層 DOM。
+   *
+   * 尺寸一律取 2 的倍數，這樣在任何整數倍率下都不會出現半像素。
+   */
+  .px-frame {
+    background: #0e131ef2;
+    border: 2px solid #0a0c12;
+    box-shadow:
+      inset 0 0 0 2px #253044,
+      inset 2px 2px 0 2px #1e2635;
+    border-radius: 0;
+  }
+
+  /* ── 行情跑馬燈（最上方） ───────────────────────────── */
+  /*
+   * 特意寫成 `#hud-root > .tk` 而不是 `.tk`：`#hud-root > *` 帶著一個 id
+   * 選擇器（1,0,0），單純的 `.tk`（0,1,0）蓋不過它，pointer-events 會被
+   * 打回 auto。症狀是最上面那 28px 再也點不到地板 —— 而那正是玩家想往上
+   * 走時最常點的地方。
+   */
+  #hud-root > .tk {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    background: #080b12f2;
+    border-bottom: 2px solid #0a0c12;
+    box-shadow: inset 0 -2px 0 0 #253044;
+    pointer-events: none;
+  }
+
+  .tk-track {
+    display: flex;
+    /* 內容量不確定，所以寬度交給內容決定；動畫捲一整份的寬度（= 軌道的
+       一半）就無縫接回開頭。純 CSS transform，不碰 DOM，也不佔任何一幀的
+       JS —— 世界正在用同一顆 CPU 跑 60fps。 */
+    width: max-content;
+    animation: tk-scroll 38s linear infinite;
+    will-change: transform;
+  }
+  @keyframes tk-scroll {
+    to { transform: translateX(-50%); }
+  }
+  /* 系統設定要求減少動態時就停住。捲動的字對前庭敏感的人是實際的不適，
+     不是偏好問題；停住之後數字照樣每 5 秒更新，資訊一項不少。 */
+  @media (prefers-reduced-motion: reduce) {
+    .tk-track { animation: none; }
+  }
+
+  .tk-row {
+    display: flex;
+    flex: none;
+    /*
+     * 每一份至少要跟視窗一樣寬。少了這行，在寬螢幕上內容捲完會露出一段
+     * 空白才跳回開頭 —— 因為 `-50%` 只位移一份的寬度，那份若比視窗窄，
+     * 補上來的第二份填不滿。兩份寬度必須完全相等，`-50%` 才會剛好接上。
+     */
+    min-width: 100vw;
+    justify-content: space-around;
+  }
+
+  .tk-item {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0 18px;
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .tk-sym { color: #7d8ba5; letter-spacing: 1px; }
+  .tk-price { color: var(--txt); }
+  .tk-chg { color: var(--dim); }
+
+  /*
+   * 資料來源徽章壓在右邊不捲動 —— 它不是行情，是「這些數字打哪來」。
+   * 用 absolute 而不是 `margin-left: auto`：軌道是 `max-content`，通常比
+   * 容器寬，flex 的 auto margin 在溢出的容器裡會把徽章推到看不見的地方。
+   * 左邊那道漸層是為了讓捲過來的字在它下面淡出，而不是硬生生被切掉。
+   */
+  .tk-badge {
+    position: absolute;
+    right: 0;
+    top: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding: 0 10px 0 56px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--max);
+    /*
+     * 漸層要夠長，捲過來的數字才有距離淡出。原本是 20px —— 一組報價
+     * （「3,416,258 −0.14%」）比 20px 寬得多，於是它在還有七成不透明度的
+     * 時候就撞上純色底，看起來是被硬生生切掉半個數字，而不是淡出。
+     * 56px 大約是一組報價的寬度，整組字會在進到純色區之前就消失。
+     */
+    background: linear-gradient(90deg, #080b1200, #080b12 56px);
+  }
+
+  /* ── 角色卡（左下） ─────────────────────────────────── */
+  .pod {
+    position: fixed;
+    left: 12px;
+    bottom: calc(var(--fbar-h, 62px) + 12px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px 8px 8px;
+    font: inherit;
+    color: var(--txt);
+    cursor: pointer;
+    background: #0e131ef2;
+    border: 2px solid #0a0c12;
+    box-shadow:
+      inset 0 0 0 2px #253044,
+      inset 2px 2px 0 2px #1e2635;
+    border-radius: 0;
+  }
+  .pod:hover {
+    box-shadow:
+      inset 0 0 0 2px var(--cyan),
+      inset 2px 2px 0 2px #1e2635;
+  }
+
+  /* 頭像是世界裡那張圖的頭部（`CharPreview head`），不是另外拼的色塊 ——
+     兩份會各自漂走，換角色時左下角就會跟世界裡的人長得不一樣。 */
+  .pod-face {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    background: #1b2440;
+    flex: none;
+  }
+
+  /* ── 全景／跟隨切換（角色卡右邊） ────────────────────── */
+  .zoombtn {
+    position: fixed;
+    /* 角色卡的寬度會隨暱稱長度變 —— 用 left 對齊會在改名時跳位。
+       改成貼著角色卡的上緣、靠左的第二欄：`left` 給一個略大於角色卡
+       最短寬度的值，並讓它自己的高度小一階，視覺上像是掛在旁邊。 */
+    left: 12px;
+    bottom: calc(var(--fbar-h, 62px) + 62px);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--txt);
+    cursor: pointer;
+    background: #0e131ef2;
+    border: 2px solid #0a0c12;
+    box-shadow: inset 0 0 0 2px #253044;
+    border-radius: 0;
+  }
+  .zoombtn:hover { box-shadow: inset 0 0 0 2px var(--cyan); }
+  .zoombtn-glyph { font-family: var(--mono); font-size: 13px; color: var(--cyan); }
+  .zoombtn kbd { font-size: 10px; }
+
+  .pod-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.35;
+    text-align: left;
+  }
+  .pod-name { font-size: 13px; }
+  .pod-state { font-size: 11px; color: var(--dim); }
+  .pod-state[data-on='1'] { color: var(--green); }
+  .pod kbd { font-size: 10px; }
+
+  /* ── 底部功能條 ─────────────────────────────────────── */
+  .fbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    padding: 6px 10px;
+    overflow-x: auto;
+    background: #080b12f2;
+    border-top: 2px solid #0a0c12;
+    box-shadow: inset 0 2px 0 0 #253044;
+  }
+  .fbar-group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0 12px;
+    border-right: 1px solid #1e2635;
+  }
+  .fbar-group:last-child { border-right: 0; }
+  .fbar-glabel {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #54637d;
+  }
+  .fbar-slots { display: flex; gap: 6px; }
+
+  .fslot {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 9px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--txt);
+    cursor: pointer;
+    white-space: nowrap;
+    background: #141b29;
+    border: 2px solid #0a0c12;
+    box-shadow: inset 0 0 0 1px #253044;
+    border-radius: 0;
+  }
+  .fslot:hover:not(:disabled) {
+    background: #1c2536;
+    box-shadow: inset 0 0 0 1px var(--a, var(--cyan));
+  }
+  .fslot:active:not(:disabled) { transform: translateY(1px); }
+  .fslot:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* accent 對照表。新增 accent 時這裡要同步 —— CSS 守不住，漏掉會靜靜退回青色。 */
+  .fslot[data-accent='cyan']   { --a: var(--cyan); }
+  .fslot[data-accent='amber']  { --a: var(--amber); }
+  .fslot[data-accent='violet'] { --a: var(--violet); }
+  .fslot[data-accent='green']  { --a: var(--green); }
+  .fslot[data-accent='max']    { --a: var(--max); }
+
+  .fslot-glyph {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--a, var(--cyan));
+    background: #0a0c12;
+    box-shadow: inset 0 0 0 1px var(--a, var(--cyan));
+  }
+  /* 有落點的功能會走「傳送＋走過去」，用箭頭把它跟純開面板的區分開 */
+  .fslot-go { font-size: 10px; color: #54637d; }
+
+  /* ── MAIA dock（右側，非模態） ───────────────────────── */
+  .maia-tab {
+    position: fixed;
+    /* 不貼齊 0：inset box-shadow 的右邊那道 2px 光環會剛好落在視窗邊界上被
+       抹掉，整顆 tab 看起來像沒載完的破圖。留 2px 讓光環四邊都收得起來。 */
+    right: 2px;
+    top: calc(50% + var(--ticker-h, 0px) / 2);
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 8px;
+    font: inherit;
+    color: var(--max);
+    cursor: pointer;
+    background: #0e131ef2;
+    border: 2px solid #0a0c12;
+    border-right: 0;
+    box-shadow: inset 0 0 0 2px var(--max);
+    border-radius: 0;
+  }
+  .maia-tab:hover { background: #16203a; }
+  .maia-tab-glyph { font-family: var(--mono); font-size: 12px; }
+  .maia-tab-label {
+    font-size: 11px;
+    writing-mode: vertical-rl;
+    letter-spacing: 3px;
+  }
+  .maia-tab kbd { font-size: 10px; }
+
+  .maia-dock {
+    position: fixed;
+    right: 0;
+    /* 讓出行情條的高度，否則 dock 的標題列會被壓在它底下 */
+    top: var(--ticker-h, 0px);
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    background: #0b0f18f7;
+    border-left: 2px solid #0a0c12;
+    box-shadow: inset 2px 0 0 0 var(--max);
+    border-radius: 0;
+  }
+
+  .maia-dock-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #1e2635;
+  }
+  .maia-dock-head h2 {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    color: var(--max);
+  }
+  .maia-sub {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .maia-elapsed { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .maia-dot {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    background: #3d4a61;
+  }
+  .maia-dot[data-busy='1'] {
+    background: var(--max);
+    animation: maia-blink 1s steps(2, end) infinite;
+  }
+  @keyframes maia-blink {
+    50% { opacity: 0.25; }
+  }
+  .maia-x {
+    font: inherit;
+    font-size: 13px;
+    color: var(--dim);
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+  .maia-x:hover { color: var(--txt); }
+
+  .maia-thread {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .maia-suggest { padding: 0 12px 8px; margin-top: 0; }
+  .maia-composer { padding: 10px 12px; border-top: 1px solid #1e2635; margin-top: 0; }
+
+  /* 工具晶片依資料來源上色 —— 顏色就是 grounding 的圖例 */
+  .maia-chip[data-src='dna']    { border-color: var(--violet); color: var(--violet); }
+  .maia-chip[data-src='max']    { border-color: var(--max); color: var(--max); }
+  .maia-chip[data-src='market'] { border-color: var(--cyan); color: var(--cyan); }
+  .maia-chip[data-src='news']   { border-color: var(--amber); color: var(--amber); }
+  .maia-chip[data-ok='0']       { opacity: 0.55; }
+
+  .maia-approval {
+    padding: 10px;
+    font-size: 12px;
+    background: #1a1408;
+    border: 2px solid #0a0c12;
+    box-shadow: inset 0 0 0 1px var(--amber);
+  }
+
+  /* 直立手機：dock 改成整片蓋上來，功能條讓出高度給它 */
+  @media (max-width: 560px) {
+    .maia-dock { width: 100% !important; }
+    .pod { left: 8px; }
+  }
+}

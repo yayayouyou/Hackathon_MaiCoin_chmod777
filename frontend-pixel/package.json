@@ -1,0 +1,26 @@
+{
+  "name": "maia-world",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "typecheck:gate": "tsc -p tsconfig.gate.json --noEmit",
+    "test": "node tests/run.mjs"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "playwright": "^1.62.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
+  }
+}

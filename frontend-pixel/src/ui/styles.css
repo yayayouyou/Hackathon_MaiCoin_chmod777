@@ -1,0 +1,1283 @@
+/*
+ * ★ 接縫 PR 後凍結，要動請開 issue。
+ *
+ * 層級順序一次宣告完（規格 §8.3 規則 3）。後宣告的層永遠蓋得過先宣告的，
+ * 與 @import 順序完全無關 —— 這讓「hud.css 必須在 styles.css 之後 import
+ * 才能覆寫 .scene-title」這種脆弱設計直接消失。
+ *
+ *   core → 這個檔（既有 868 行）
+ *   zone → 各 zone 的 .z-<zoneid>-* 樣式
+ *   hud  → hud/hud.css（第三 DOM 層）
+ *   pro  → ui/pro/pro.css（MAX 品牌語言的專業終端）
+ *
+ * 底下整段包在 @layer core 裡但**刻意不重新縮排**：重排 868 行會讓這個
+ * commit 的 diff 從 5 行變成 868 行，而現在正是所有人要往同一批共用檔
+ * rebase 的時候。縮排的可讀性不值那個代價。
+ */
+@layer core, zone, hud, pro;
+
+@layer core {
+
+/* ── 基礎 ───────────────────────────────────────────────── */
+:root {
+  --scale: 1;
+  --view-w: 480;
+  --view-h: 270;
+  --bg: #05070c;
+  --panel: #0e131e;
+  --panel-2: #141b29;
+  --line: #253044;
+  --txt: #c3cede;
+  --dim: #7d8ba5;
+  --cyan: #00e5ff;
+  --amber: #ffc23d;
+  --violet: #b06cff;
+  --green: #4ee88a;
+  --max: #6f8fff; /* MAX 交易所品牌藍 */
+  --rose: #ff4f78;
+  --font: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* 作者樣式的優先度一律高於瀏覽器預設，所以 .world-prompt { display: flex }
+   會蓋掉 [hidden] 的 display: none。沒有這條，隱藏中的提示會露在左上角。 */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* ── 舞台與畫布 ─────────────────────────────────────────── */
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+#screen,
+#world-labels {
+  grid-area: 1 / 1;
+}
+
+/* 整數倍放大 + 關閉平滑化，這兩者缺一不可才會是硬邊像素 */
+#screen {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  /* 觸控裝置：擋掉雙擊縮放與下拉重整，否則點擊移動會很難用 */
+  touch-action: none;
+}
+
+/* 尺寸由 core.ts 輸出的變數推導，才能跟畫布嚴格對齊 */
+#world-labels {
+  position: relative;
+  width: calc(var(--view-w) * 1px * var(--scale));
+  height: calc(var(--view-h) * 1px * var(--scale));
+  pointer-events: none;
+  /* 標籤跟著世界座標走，離開視野時會跑到畫布外面，必須裁掉 */
+  overflow: hidden;
+  transition: opacity 0.14s;
+}
+
+#world-labels > * {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+}
+
+/* ── 世界標籤 ───────────────────────────────────────────── */
+/* 靠左而不置中：角色走到房間頂端時，頭上的暱稱正好會撞到置中的標題 */
+.scene-title {
+  left: 16px !important;
+  top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  color: var(--txt);
+  text-shadow: 0 2px 0 #000, 0 0 14px rgba(0, 0, 0, 0.9);
+  opacity: 0.85;
+}
+
+.nameplate {
+  --a: var(--cyan);
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--a);
+  background: rgba(5, 7, 12, 0.88);
+  border: 1px solid var(--a);
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.8);
+}
+.nameplate[data-accent='amber'] { --a: var(--amber); }
+.nameplate[data-accent='violet'] { --a: var(--violet); }
+.nameplate[data-accent='green'] { --a: var(--green); }
+.nameplate[data-accent='max'] { --a: var(--max); }
+
+/* 主題看板的文字：不是浮在空中的標籤，而是貼在 topicboard 那塊
+   136x26 深色面板上。所以尺寸要跟著世界像素放大 —— 用 core.ts 已經
+   發佈的 --scale 算，就不必每幀去寫 style。 */
+.topic-board {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  width: calc(132px * var(--scale, 3));
+  height: calc(24px * var(--scale, 3));
+  padding: 0 calc(3px * var(--scale, 3));
+  overflow: hidden;
+  text-align: left;
+}
+.topic-board b {
+  font-size: clamp(11px, calc(4.2px * var(--scale, 3)), 22px);
+  font-weight: 700;
+  line-height: 1.15;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.9);
+  /* 主題最長 12 個中文字左右，超出就截斷而不是把看板撐開 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topic-board span {
+  font-size: clamp(9px, calc(3px * var(--scale, 3)), 15px);
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* NPC 對話泡泡。左下角一個小尖角，指向說話的人。 */
+.npc-bubble {
+  position: relative;
+  max-width: calc(96px * var(--scale, 3));
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #f2f6ff;
+  background: rgba(12, 14, 22, 0.92);
+  border: 1px solid rgba(125, 139, 165, 0.55);
+  border-radius: 3px;
+  box-shadow: 0 0 14px rgba(0, 0, 0, 0.85);
+}
+.npc-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 5px;
+  height: 5px;
+  background: rgba(12, 14, 22, 0.92);
+  border-right: 1px solid rgba(125, 139, 165, 0.55);
+  border-bottom: 1px solid rgba(125, 139, 165, 0.55);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+/* 提示本身就是按鈕：觸控裝置沒有 E 鍵，桌機則多一個滑鼠可用的入口。
+   #world-labels 整層是 pointer-events: none，這裡單獨開回來。 */
+.world-prompt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 4px 10px 4px 5px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(5, 7, 12, 0.92);
+  border: 1px solid var(--line);
+  box-shadow: 0 0 16px rgba(0, 0, 0, 0.9);
+  animation: bobUp 1.6s ease-in-out infinite;
+}
+
+.world-prompt b {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--bg);
+  background: var(--cyan);
+}
+
+@keyframes bobUp {
+  0%, 100% { margin-top: 0; }
+  50% { margin-top: -3px; }
+}
+
+.nickname {
+  padding: 1px 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  background: rgba(5, 7, 12, 0.7);
+}
+
+/* ── 常駐 UI ────────────────────────────────────────────── */
+.hud {
+  position: fixed;
+  right: 16px;
+  /* 功能條在 #hud-root（z-index 6）且是全寬的，這一層只有 z-index 5 ——
+     貼齊視窗底部會被它蓋掉半顆按鈕。`--fbar-h` 由 FeatureBar 量完寫進
+     documentElement，`.pod` 已經是同一套寫法。 */
+  bottom: calc(var(--fbar-h, 62px) + 16px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  z-index: 5;
+  /* 純文字提示，不該吃掉世界的點擊。世界是可以點地板移動的，HUD 每多佔
+     一塊不透明的區域，可走的地方就少一塊 —— 提示沒有任何要按的東西，
+     沒有理由讓它變成右下角一塊點不到的死區。 */
+  pointer-events: none;
+}
+
+.hud-hint {
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+}
+
+.hud-hint kbd { margin: 0 2px; }
+
+kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txt);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+/* ── 彈窗殼 ─────────────────────────────────────────────── */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(3, 5, 9, 0.72);
+  backdrop-filter: blur(2px);
+  animation: fade 0.12s ease-out;
+}
+
+@keyframes fade { from { opacity: 0; } }
+
+.panel {
+  --a: var(--cyan);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  /*
+   * 不能用 max-height: 100%。在 place-items: center 的 grid 裡，
+   * 項目的參照高度是內容決定的（不確定），百分比高度會被當成 none，
+   * 面板就會長到視窗外面而且內層永遠不會出現捲軸。
+   * dvh 而非 vh：手機瀏覽器工具列收合時 vh 不會跟著變。
+   */
+  max-height: calc(100dvh - 32px);
+  min-height: 0;
+  background: var(--panel);
+  border: 2px solid var(--a);
+  box-shadow: 0 0 0 1px #000, 0 0 40px rgba(0, 0, 0, 0.9), inset 0 0 60px rgba(0, 0, 0, 0.4);
+  animation: pop 0.14s ease-out;
+}
+.panel[data-accent='amber'] { --a: var(--amber); }
+.panel[data-accent='violet'] { --a: var(--violet); }
+.panel[data-accent='green'] { --a: var(--green); }
+.panel[data-accent='max'] { --a: var(--max); }
+
+.panel-sm { max-width: 460px; }
+.panel-md { max-width: 720px; }
+.panel-lg { max-width: 1080px; }
+
+@keyframes pop { from { transform: translateY(6px); opacity: 0; } }
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-head h2 {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--a);
+}
+
+.x {
+  width: 26px;
+  height: 26px;
+  color: var(--dim);
+  background: transparent;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.x:hover { color: #fff; border-color: var(--a); }
+
+/*
+ * flex column + min-height: 0 是整套捲動的骨幹。
+ * 內層想要自己捲的區塊（留言串、行情列表）只要標 flex: 1; min-height: 0
+ * 就會自動吃掉剩餘高度，輸入框則固定在底部 —— 不必再寫死任何 vh。
+ */
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+}
+
+.panel-foot {
+  padding: 8px 16px;
+  font-size: 11px;
+  color: var(--dim);
+  border-top: 1px solid var(--line);
+}
+
+/* ── 共用元件 ───────────────────────────────────────────── */
+.state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 160px;
+  color: var(--dim);
+  flex-direction: column;
+}
+.state.err { color: var(--rose); }
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line);
+  border-top-color: var(--cyan);
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.btn {
+  padding: 7px 14px;
+  color: var(--txt);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  letter-spacing: 0.06em;
+}
+.btn:hover { border-color: var(--a, var(--cyan)); color: #fff; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-primary {
+  color: var(--bg);
+  /* 跟著所在面板的強調色走，藍色按鈕出現在琥珀色面板上會很突兀 */
+  background: var(--a, var(--cyan));
+  border-color: transparent;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.btn-primary:hover { color: var(--bg); filter: brightness(1.12); }
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tabs button {
+  padding: 8px 14px;
+  color: var(--dim);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  letter-spacing: 0.08em;
+}
+.tabs button[aria-selected='true'] {
+  color: var(--a, var(--cyan));
+  border-bottom-color: var(--a, var(--cyan));
+}
+.tabs button:hover { color: var(--txt); }
+
+.field {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.field span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+}
+
+input[type='text'],
+input[type='password'],
+input[type='number'],
+textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  background: #080b12;
+  border: 1px solid var(--line);
+  outline: none;
+}
+input:focus, textarea:focus { border-color: var(--cyan); }
+
+.up { color: var(--green); }
+.down { color: var(--rose); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--dim); }
+
+.star {
+  background: transparent;
+  border: none;
+  color: var(--line);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.star:hover { color: var(--amber); }
+.star[data-on='true'] { color: var(--amber); }
+
+/* ── 排行 / 選房 ────────────────────────────────────────── */
+.rank-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto auto 28px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  background: transparent;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  width: 100%;
+  text-align: left;
+}
+.rank-row:hover { background: var(--panel-2); }
+.rank-row .no { font-family: var(--mono); color: var(--dim); text-align: right; }
+.rank-row .no[data-top='true'] { color: var(--amber); font-weight: 700; }
+.rank-row .topic { font-weight: 600; }
+.rank-row .tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  font-size: 10px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  vertical-align: 1px;
+}
+
+.search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* ── 報告 ───────────────────────────────────────────────── */
+.sentiment {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.gauge {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  background: linear-gradient(90deg, var(--rose), #3d4a61 50%, var(--green));
+}
+
+.gauge i {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 14px;
+  background: #fff;
+  box-shadow: 0 0 8px #fff;
+}
+
+.point {
+  margin-bottom: 12px;
+  padding-left: 12px;
+  border-left: 2px solid var(--a, var(--cyan));
+}
+.point h4 { font-size: 13px; letter-spacing: 0.08em; margin-bottom: 2px; }
+.point p { color: var(--dim); }
+
+.risks li { margin-left: 18px; color: var(--dim); }
+
+.src-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 44px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.bar { height: 6px; background: var(--panel-2); }
+.bar i { display: block; height: 100%; background: var(--a, var(--cyan)); }
+
+/* ── 討論串 / 對話 ──────────────────────────────────────── */
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.post { display: grid; grid-template-columns: 28px 1fr; gap: 10px; }
+.post .av { width: 28px; height: 28px; border: 1px solid rgba(0, 0, 0, 0.6); }
+.post .meta { display: flex; gap: 8px; align-items: baseline; font-size: 11px; }
+.post .meta b { font-size: 12px; letter-spacing: 0.04em; }
+.post.self .body { color: #fff; }
+
+.composer {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.composer input { flex: 1; min-width: 0; }
+
+.chat-msg {
+  max-width: 78%;
+  padding: 8px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.chat-msg.me { margin-left: auto; background: #10283a; border-color: #1a5c78; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--dim);
+  background: transparent;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.chip:hover { color: var(--amber); border-color: var(--amber); }
+/* 選中狀態。原本每個面板各自用 inline style 塗 color，換一個地方就要再寫
+   一次；改成同一個 data 屬性，篩選列與排序列共用。 */
+.chip[data-on='true'] { color: var(--amber); border-color: var(--amber); }
+
+/* ── 策略牆 ─────────────────────────────────────────────────
+ *
+ * 卡片刻意不做成排行榜的一列：一列塞不下「報酬 + 回撤 + 樣本數」三個
+ * 同等重要的數字，而只秀報酬正是這類社群看板最常見的誤導。
+ */
+.strat {
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+}
+/* 樣本不足的卡片整張降一階，並把左緣改成警示色 —— 在讀到數字之前
+   就先知道這一張要打折看。 */
+.strat[data-thin='1'] { border-left-color: var(--rose); }
+
+.strat-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* `.tag` 在 styles.css 裡是 `.rank-row .tag`，只在排行列生效。這裡自己補一份
+   同樣外觀的，而不是把那條規則的範圍拉開 —— 排行列的 tag 有 margin-left 與
+   vertical-align 是為了配合它自己的行內排版，搬過來會歪。 */
+.strat-head .tag {
+  padding: 1px 7px;
+  font-size: 10px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+}
+.strat-face { width: 22px; height: 22px; flex: none; }
+.strat-title { display: flex; flex-direction: column; line-height: 1.3; margin-right: auto; }
+.strat-title b { font-size: 14px; color: var(--txt); }
+.strat-title i { font-size: 11px; color: var(--dim); font-style: normal; }
+
+.strat-summary { margin: 8px 0 10px; font-size: 12px; color: var(--dim); line-height: 1.6; }
+
+.strat-metrics { display: flex; flex-wrap: wrap; gap: 18px; }
+.strat-metric { display: flex; flex-direction: column; line-height: 1.3; }
+/* 四個數字同一個字級 —— 報酬不比回撤大顆，那是刻意的 */
+.strat-metric b { font-family: var(--mono); font-size: 15px; color: var(--txt); }
+.strat-metric i { font-size: 10px; color: var(--dim); font-style: normal; letter-spacing: 0.1em; }
+
+.strat-thin {
+  margin: 10px 0 0;
+  padding: 6px 9px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--rose);
+  background: #2a1119;
+  border: 1px solid #4a1f2b;
+}
+
+.strat-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.strat-spacer { flex: 1 1 auto; }
+/* `.star` 預設是 var(--line)（很暗），因為在排行列裡它只是一個小圖示。
+   這裡它還帶著收藏人數，數字得讀得到。 */
+.strat-foot .star { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--dim); }
+.strat-foot .star[data-on='true'] { color: var(--amber); }
+
+.strat-rules {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--txt);
+}
+.strat-rules li::marker { color: var(--amber); }
+
+.strat-note {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--dim);
+  background: var(--panel-2);
+  border-left: 3px solid var(--amber);
+}
+.strat-note b { color: var(--amber); }
+
+.strat-sortlabel { align-self: center; font-size: 10px; letter-spacing: 0.16em; color: var(--dim); }
+
+/* ── 消息 / 活動 ────────────────────────────────────────── */
+.split {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) 1fr;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+.split > nav {
+  border-right: 1px solid var(--line);
+  padding-right: 12px;
+  overflow: auto;
+  min-height: 0;
+}
+.split > article { overflow: auto; min-height: 0; }
+
+.news-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.news-item:hover { background: var(--panel-2); }
+.news-item[aria-selected='true'] { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--a, var(--cyan)); }
+.news-item .k {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--a, var(--cyan));
+}
+.news-item .t { display: block; font-size: 13px; }
+
+article p { margin-bottom: 10px; color: var(--dim); }
+article h3 { font-size: 15px; margin-bottom: 4px; }
+
+/* ── 交易面板 ───────────────────────────────────────────── */
+.trade {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(240px, 280px) minmax(260px, 1fr);
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* overflow: auto 是保險。視窗很矮時下單表單的固定欄位可能塞不下，
+   讓欄自己捲動總比溢出去疊到別的區塊上好。 */
+.col { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; }
+.col > h3 {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mkt-list { overflow: auto; flex: 1; min-height: 120px; }
+
+.mkt-row {
+  display: grid;
+  grid-template-columns: 1fr auto 62px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(37, 48, 68, 0.5);
+  cursor: pointer;
+  text-align: left;
+}
+.mkt-row:hover { background: var(--panel-2); }
+.mkt-row[aria-selected='true'] { background: #10283a; box-shadow: inset 2px 0 0 var(--cyan); }
+.mkt-row .sym { font-weight: 600; }
+.mkt-row .sub { font-size: 10px; color: var(--dim); }
+.mkt-row .chg { text-align: right; font-size: 12px; }
+
+.gate {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.gate-mask {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  padding: 18px;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 194, 61, 0.05) 0 8px,
+    transparent 8px 16px
+  );
+  border: 1px dashed var(--line);
+  overflow: auto;
+}
+
+.gate-mask h4 { font-size: 13px; color: var(--amber); letter-spacing: 0.1em; }
+.gate-mask p { font-size: 12px; color: var(--dim); }
+
+.warn {
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--amber);
+  background: rgba(255, 194, 61, 0.07);
+  border-left: 2px solid var(--amber);
+}
+
+.side-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin-bottom: 10px; }
+.side-tabs button {
+  padding: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.side-tabs button[aria-selected='true'][data-side='buy'] { background: #14472c; border-color: var(--green); color: var(--green); }
+.side-tabs button[aria-selected='true'][data-side='sell'] { background: #4a1526; border-color: var(--rose); color: var(--rose); }
+
+.pcts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 10px; }
+.pcts button { padding: 5px 0; font-size: 11px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; }
+.pcts button:hover { border-color: var(--cyan); }
+
+.summary { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; }
+.summary span:first-child { color: var(--dim); }
+
+.submit {
+  width: 100%;
+  padding: 11px;
+  margin-top: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--bg);
+  border: none;
+  cursor: pointer;
+}
+.submit[data-side='buy'] { background: var(--green); }
+.submit[data-side='sell'] { background: var(--rose); }
+.submit:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.pos-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pos-table th {
+  text-align: right;
+  padding: 6px 8px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+  font-weight: 500;
+}
+.pos-table th:first-child, .pos-table td:first-child { text-align: left; }
+.pos-table td {
+  text-align: right;
+  padding: 7px 8px;
+  border-bottom: 1px solid rgba(37, 48, 68, 0.5);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.pos-table td:first-child { font-family: var(--font); font-weight: 600; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--green);
+  border: 1px solid var(--green);
+}
+.badge i { width: 5px; height: 5px; background: var(--green); }
+
+.toast {
+  padding: 8px 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  background: var(--panel-2);
+  border-left: 2px solid var(--green);
+}
+.toast[data-err='true'] { border-left-color: var(--rose); color: var(--rose); }
+
+.empty { padding: 40px 0; text-align: center; color: var(--dim); font-size: 13px; }
+
+.pos-scroll { overflow: auto; flex: 1; min-height: 100px; }
+
+/* ── RWD ────────────────────────────────────────────────── */
+
+/* 中等寬度：三欄擠不下，持倉整排移到第二列 */
+@media (max-width: 1040px) {
+  .trade { grid-template-columns: minmax(200px, 1fr) minmax(240px, 1fr); }
+  .trade > .col:last-child { grid-column: 1 / -1; }
+  /* 換行之後列高必須由內容決定，內層改用 dvh 自己設上限。
+     若讓列可以比內容矮，第二列會疊到第一列身上。 */
+  .trade .col { min-height: auto; }
+  .mkt-list { flex: none; max-height: 42dvh; }
+  .pos-scroll { flex: none; max-height: 40dvh; }
+}
+
+/* 窄螢幕：全部單欄堆疊，面板吃滿寬度 */
+@media (max-width: 680px) {
+  .backdrop { padding: 8px; }
+  .panel { max-height: calc(100dvh - 16px); }
+  .panel-sm,
+  .panel-md,
+  .panel-lg { max-width: 100%; }
+  .panel-body { padding: 12px; }
+
+  .trade,
+  .split { grid-template-columns: 1fr; }
+  /* 單欄堆疊時列高必須由內容決定。上一個斷點的 minmax(0, auto) 允許列
+     比內容矮，下一區塊就會疊到上一區塊身上。 */
+  .trade { grid-auto-rows: auto; }
+  .split > nav {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding-right: 0;
+    padding-bottom: 8px;
+    max-height: 34dvh;
+  }
+  /*
+   * 單欄堆疊後改由 panel-body 統一捲動，內層不再搶剩餘高度。
+   * .col 必須把 min-height 還原成 auto —— 它在這裡是 grid 項目，
+   * min-height: 0 會允許列比內容矮，下一個區塊就會疊到上一個身上。
+   */
+  .trade .col { min-height: auto; }
+  .mkt-list,
+  .thread,
+  .pos-scroll { flex: none; }
+  .mkt-list { max-height: 34dvh; }
+  .thread { max-height: 40dvh; min-height: 0; }
+  .pos-scroll { max-height: none; overflow-x: auto; }
+
+  /* 排行列：拿掉在線人數，只留主題、漲跌與收藏 */
+  .rank-row { grid-template-columns: 24px 1fr auto 26px; gap: 8px; }
+  .rank-row .online { display: none; }
+  .rank-row .tag { display: none; }
+
+  .src-row { grid-template-columns: 1fr; gap: 4px; }
+  .hud-hint { display: none; }
+  .col-drop { display: none; }
+  .scene-title { font-size: 11px; letter-spacing: 0.16em; }
+}
+
+/* 觸控裝置：手指比游標粗，互動元件要放大 */
+@media (pointer: coarse) {
+  .world-prompt {
+    padding: 8px 14px 8px 7px;
+    font-size: 14px;
+  }
+  .world-prompt b { width: 24px; height: 24px; font-size: 13px; }
+  .chip,
+  .btn { padding: 9px 14px; }
+  .star { font-size: 20px; padding: 6px; }
+}
+
+/* ── 捲軸 ───────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #080b12; }
+::-webkit-scrollbar-thumb { background: var(--line); border: 2px solid #080b12; }
+::-webkit-scrollbar-thumb:hover { background: #3d4a61; }
+
+/* ── 變體插槽（規格 §8.3 規則 3）──────────────────────────
+ *
+ * 預先開好，讓沒有人需要為了「我這個按鈕要紅色」而改 core 的既有規則。
+ * 全部走 data-* 屬性選擇器：特異度比原規則高一級，所以放在檔案哪裡都有效，
+ * 也不會有人為了蓋過去而寫 !important。
+ *
+ * 需要新的變體 → 在這一區加，不要去改上面的 .btn / .panel / .field 本體。
+ */
+
+/* 危險操作（撤單、清空對話）與去背按鈕（工具列、晶片列）。
+   刻意用 rgba 而不是 color-mix()：附錄 B 的離線 demo 前提下，
+   少一個「這台機器的瀏覽器版本夠不夠新」的變數。 */
+.btn[data-variant='danger'] {
+  color: var(--rose);
+  border-color: rgba(255, 79, 120, 0.45);
+}
+.btn[data-variant='danger']:hover {
+  color: #fff;
+  background: rgba(255, 79, 120, 0.22);
+  border-color: var(--rose);
+}
+.btn[data-variant='ghost'] {
+  background: transparent;
+  border-color: transparent;
+  color: var(--dim);
+}
+.btn[data-variant='ghost']:hover {
+  color: var(--txt);
+  border-color: var(--line);
+}
+
+/* 密集表單（下單面板的數量／價格列） */
+.field[data-size='sm'] { margin-bottom: 6px; }
+.field[data-size='sm'] span { margin-bottom: 2px; font-size: 10px; }
+.field[data-size='sm'] input,
+.field[data-size='sm'] textarea { padding: 5px 8px; }
+
+/* 內容自己管邊距的面板（表格、圖表、CSV 原始列） */
+.panel-body[data-flush] { padding: 0; }
+
+/* 專業終端與資料抽屜需要比 .panel-lg 更寬 */
+.panel[data-size='xl'] { max-width: 1440px; }
+@media (max-width: 680px) {
+  .panel[data-size='xl'] { max-width: 100%; }
+}
+
+/* ── 全景模式的世界標籤 ─────────────────────────────────────
+   `#world-labels` 上的 data-zoom 由 game/worldLabels.ts 的 setLabelZoom()
+   寫入。放大交給 CSS 而不是 JS 的理由：這樣「全景時標籤要多大」是一條
+   可以直接看、直接改的規則，不必去 JS 裡追一堆 style 寫入。
+
+   為什麼標籤要在全景時放大而不是跟著世界縮小：中文字是螢幕原生解析度的
+   DOM，不進 backbuffer（8px 的中文整數放大會糊成一團）。所以世界縮小時
+   標籤若不動，字相對房間反而變大、蓋住畫面；而全景這一眼要回答的正是
+   「這個空間裡有哪些功能」—— 那些名字才是主角，該放大的是它們。 */
+
+.spot-label {
+  --a: var(--cyan);
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: var(--a);
+  background: rgba(5, 7, 12, 0.9);
+  border: 1px solid var(--a);
+  box-shadow: 0 0 14px rgba(0, 0, 0, 0.85);
+}
+.spot-label[data-accent='amber'] { --a: var(--amber); }
+.spot-label[data-accent='violet'] { --a: var(--violet); }
+.spot-label[data-accent='green'] { --a: var(--green); }
+.spot-label[data-accent='max'] { --a: var(--max); }
+
+/* 跟隨模式：站牌常駐，但降一階。這時鏡頭已經貼在角色身上，牌子的任務只是
+   「餘光掃到就知道那邊有什麼」，跟全景那一眼要讀清楚全場不同 —— 維持全景
+   的字級會讓四五塊牌子把地板蓋掉。 */
+#world-labels[data-zoom='focus'] .spot-label {
+  padding: 3px 9px;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+#world-labels[data-zoom='overview'] .nameplate,
+#world-labels[data-zoom='overview'] .spot-label {
+  padding: 6px 16px;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+}
+
+/* 全景時 NPC 對話泡泡收起來：那一眼要看的是空間結構，
+   六個泡泡同時掛著只會把地板蓋掉。 */
+#world-labels[data-zoom='overview'] .npc-bubble { display: none; }
+
+/* 手機的視野本來就窄，全景再放大標籤會整片重疊 */
+@media (max-width: 680px) {
+  #world-labels[data-zoom='overview'] .nameplate,
+  #world-labels[data-zoom='overview'] .spot-label {
+    padding: 4px 10px;
+    font-size: 13px;
+  }
+}
+
+/* ── 選角（進場畫面與設定畫面共用）────────────────────── */
+
+/* 16px 的圖放大之後絕對不能讓瀏覽器補間 —— 那是整個專案「只做整數倍
+   放大」那條規則在 DOM 這一側的同一件事。 */
+.char-art {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.char-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.char-card {
+  --a: var(--cyan);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 6px 10px;
+  color: var(--dim);
+  text-align: center;
+  cursor: pointer;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.char-card[data-accent='amber'] { --a: var(--amber); }
+.char-card[data-accent='violet'] { --a: var(--violet); }
+.char-card[data-accent='green'] { --a: var(--green); }
+.char-card[data-accent='max'] { --a: var(--max); }
+
+.char-card:hover {
+  color: var(--txt);
+  border-color: var(--a);
+}
+
+/* 選中的那張要一眼看得出來：邊框 + 一圈外暈 + 底色亮一階。
+   只換邊框顏色的話，在四張並排、每張本來就有不同主色的情況下分不出來。 */
+.char-card[aria-checked='true'] {
+  color: var(--txt);
+  background: #1a2233;
+  border-color: var(--a);
+  box-shadow:
+    inset 0 0 0 1px var(--a),
+    0 0 18px -6px var(--a);
+}
+
+.char-card b { font-size: 12px; }
+.char-card span {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+/* ── 進場畫面 ───────────────────────────────────────────── */
+
+/*
+ * z-index 12：必須壓在 `.backdrop`（10）之上。
+ *
+ * 正常情況下進場畫面亮著時不會有面板開著，但「不會發生」的假設在現場
+ * demo 上不值錢 —— 真的疊起來時，該被蓋住的是面板不是進場畫面。
+ */
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  overflow-y: auto;
+  /*
+   * 半透明，讓世界透出來。
+   *
+   * `main.tsx` 的 `startGame()` 是無條件執行的 —— 這層蓋著的時候，大廳已經
+   * 在後面跑了（燈在閃、NPC 在講話）。用不透明的底色蓋掉它，等於花力氣把
+   * 現成的背景動畫擋住，再換來一個空畫面。
+   *
+   * 壓到剩一成多的亮度：看得出後面是個空間，但讀不到細節，不會跟卡片搶。
+   */
+  background: radial-gradient(120% 90% at 50% 8%, #0d1526d9 0%, #05070cf2 68%);
+  animation: fade 0.2s ease-out;
+}
+
+.boot-card {
+  width: 100%;
+  max-width: 560px;
+  padding: 26px 26px 22px;
+  background: #0e131ef2;
+  border: 2px solid #0a0c12;
+  box-shadow: inset 0 0 0 2px var(--line);
+}
+
+.boot h1 {
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: 0.2em;
+}
+
+.boot-sub {
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+
+.boot-nick {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 22px;
+}
+
+.boot-nick > span {
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+}
+
+.boot-nick input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.boot-nick input:focus {
+  outline: none;
+  border-color: var(--cyan);
+}
+
+/* 骰子在 12px 的 .chip 裡只剩一個看不出是什麼的小圓 */
+.boot-nick .chip {
+  padding: 5px 9px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.boot-h2 {
+  margin-top: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+}
+
+.boot-note {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.boot-foot {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.boot-mode {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.boot-go {
+  padding: 9px 22px;
+  color: var(--bg);
+  background: var(--cyan);
+  border-color: var(--cyan);
+}
+
+.boot-go:hover {
+  color: var(--bg);
+  filter: brightness(1.12);
+}
+
+/* 給只想趕快看到世界的人。位置刻意遠離主按鈕，不會誤按。 */
+.boot-skip {
+  position: fixed;
+  top: 16px;
+  right: 18px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--dim);
+  cursor: pointer;
+  background: none;
+  border: 1px solid transparent;
+}
+
+.boot-skip:hover {
+  color: var(--txt);
+  border-color: var(--line);
+}
+
+.boot-esc {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.boot-esc kbd { margin-right: 2px; }
+
+/* 窄畫面：四張並排會壓到每張只剩 60px，字會斷成兩行以上 */
+@media (max-width: 460px) {
+  .char-grid { grid-template-columns: repeat(2, 1fr); }
+  .boot h1 { font-size: 24px; }
+  .boot-foot { flex-direction: column; align-items: stretch; }
+}
+
+}
+/* ↑ @layer core 結束 */

@@ -1,0 +1,978 @@
+{
+ "get_ohlcv": {
+  "desc_hash": "dd8b17179142",
+  "examples": [
+   "幫我看看 BTC 的 1 小時 K 線",
+   "ETH 最近 7 天的日線走勢如何？",
+   "BTC 過去 24 小時的 1 分鐘 100_條數據",
+   "給我看下一下 ETH 的近期行情",
+   "我想知道最近幾天的 ETH 根據數據來算技術指標",
+   "幫我抓取 Binance 上 BTC 的 OHLCV 資料",
+   "ETH 現在的s 15 分鐘 1 時圖，看看這段時間的時程圖",
+   "BTC 的成交量交易量的數據拿過來"
+  ]
+ },
+ "get_ticker": {
+  "desc_hash": "a2a08de8a0eb",
+  "examples": [
+   "現在 BTC 的價格是多少？",
+   "ETH 今天的漲跌幅是多少？",
+   "行情看看，BTC 現在多少錢?",
+   "ETH 目前的買一賣一時長什麼樣？",
+   "ETH 交易量近期24小時24小時成交量有多少？",
+   "查詢詢問價為 ETH/USDT 10% 的 10% 的 query."
+  ]
+ },
+ "get_funding_rate": {
+  "desc_hash": "15503f836cb7",
+  "examples": [
+   "BTC 今天的資金費率是多少?",
+   "ETH 最近的資金費率趨勢是怎樣的?",
+   "目前的市場情緒怎麼看？",
+   "目前 BTC 的幣種有過熱多頭現象嗎？",
+   "目前的 funding rate 正在上升或下降?",
+   "看看這兩天兩天的 funding rate 在什麼樣式?",
+   "近期 ETH 的 funding rate 是不是有點高?",
+   "資金費率是什麼意思？"
+  ]
+ },
+ "get_open_interest": {
+  "desc_hash": "b3908aa72b9e",
+  "examples": [
+   "BTC 持倉量是多少？",
+   "ETH 的 OI 有在變動嗎？",
+   "ETH 續約合約的持倉量歷史數據有哪些？",
+   "ETH 價格上漲時，OI 也跟著一起上升嗎？",
+   "並選出幾項有意義の```json.{"
+  ]
+ },
+ "get_liquidation_history": {
+  "desc_hash": "4639f5679625",
+  "examples": [
+   "今日BTC的爆倉數據是什麼？",
+   "最近24小時內有什麼爆倉情形？",
+   "看看今天的多頭跟空頭爆倉金額。",
+   "告訴我今天有多少人被爆倉了。",
+   "過去一小時內的爆語情景？",
+   "昨天昨天還有沒有爆倉？",
+   "查看目前的爆倉歷史數據。",
+   "BTC的爆14時24小時內有什麼爆除數據？",
+   "```json.json{"
+  ]
+ },
+ "get_long_short_ratio": {
+  "desc_hash": "62fc375c7f85",
+  "examples": [
+   "目前的市場多空比是多少？",
+   "BTC 的長度跟短度的比例是多少？",
+   "數據顯示現在市場情緒是趨向多頭還是空頭？",
+   "現在多空比有點極端嗎？",
+   "目前全球帳戶的多空比（Long/Short Ratio）是幾？",
+   "大家對比特幣的sCOW15m500$BNB.```json} {"
+  ]
+ },
+ "get_coinglass_liquidation_chart": {
+  "desc_hash": "08fb5405ad87",
+  "examples": [
+   "查看看目前的爆P (Long) 爆S (Short) 的數量",
+   "查看爆倉數據",
+   "有多少人被清算了？",
+   "查詢爆倉資料",
+   "幫我畫個爆倉柱狀圖",
+   "這代幣的歷史爆章數據在哪裡？",
+   "查一下 Coinalyze API 代價用的爆章數據",
+   "這個幣種的數據來源是 CoinalyZ100%】```json.{"
+  ]
+ },
+ "get_coinglass_open_interest_info": {
+  "desc_hash": "c1d974e4220d",
+  "examples": [
+   "查詢近期有多少人參與到這個代幣的持倉總量？",
+   "目前這支幣的 OI 衡量權重多少？",
+   "數據同步更新什麼時候？",
+   "目前的持倉量是多少？",
+   "正在計算出此項代幣的 OI 查詢結果。",
+   "Feeling like the volume is growing. Is the offer to get curr",
+   "feeling like the volume is growing. Is the offer to get curr"
+  ]
+ },
+ "get_coinglass_ahr999": {
+  "desc_hash": "105514616c53",
+  "examples": [
+   "比特幣 AHR999 指標在哪裡？",
+   "幫我看看目前的 AHR999 數值",
+   "AHR999 是什麼？",
+   "AHR999 這些數據能不能拿來判斷時機？",
+   "{"
+  ]
+ },
+ "get_coinglass_mayer_multiple": {
+  "desc_hash": "116f90ffb573",
+  "examples": [
+   "查詢目前的梅耶乘數",
+   "現在的 Mayer Multiple 是多少？",
+   "梅耶乘數最近兩週的走勢圖表看見",
+   "這套指標在什麼時候會被視為強力買入訊號?",
+   "目前市場狀況下，Mayer Multiple 正在哪裡？",
+   "梅耶乘數目前的數值在 0.75 以下時，我該怎麼操作？",
+   "梅耶語算式核心就是比較現價 vs 200 SMA，對吧？",
+   "梅耶乘數接近 0.75 或更低？",
+   "Mayer Multiple 現在的數據是多少？"
+  ]
+ },
+ "get_coinglass_etf_flow": {
+  "desc_hash": "4092d294886f",
+  "examples": [
+   "BTC/ETH ETF 流量數據",
+   "看看今天的 BTC ETF 進出流動性",
+   "美國那邊的 ETF 流量怎麼看？",
+   "ETH ETF 的錢流到哪裡了？",
+   "ETF 流量來到了什麼時候?",
+   "今天有大戶進場或機構在買入嗎？",
+   "這些 ETF 流向數據是目前市場趨勢？",
+   "{"
+  ]
+ },
+ "get_coinglass_grayscale_stats": {
+  "desc_hash": "13b0c6d24e74",
+  "examples": [
+   "查詢 Grayscale Trust 的最新持倉量",
+   "Grayscale 灰度信託的近期溢價率是多少？",
+   "Whale 消息：目前 Grayscale 信任基金中的有多少代幣？",
+   "Grayscale 體系內部的流量數據到了嗎？",
+   "Grayscale Trust 的折價折扣變動是目前的市場行情。",
+   "Grenseh️{"
+  ]
+ },
+ "get_coinglass_liquidation_heatmap": {
+  "desc_hash": "384dff3d2101",
+  "examples": [
+   "爆倉熱力圖在哪？",
+   "看看現在的爆章區有哪裡?",
+   "預測一下爆倉價位的群落。",
+   "哪裡是主要的流動性聚集點？",
+   "4K15000，這個價格附近有大量的爆倉量嗎？",
+   "11月11月111234 (Wait, I'm looking for liquidation levels) 這裡有大",
+   "幫我找一下支撐和阻力牆。",
+   "告訴我這區間的清零點在哪裡？"
+  ]
+ },
+ "get_dex_token_info": {
+  "desc_hash": "356dd4f9d05f",
+  "examples": [
+   "這支幣的鏈上點位測量",
+   "這個合約地址有在 DEX 跑跑看",
+   "這張合約代幣在 DEX 上面有成交嗎？",
+   "查一下這個地址的交易池行情",
+   "看看這個合約有沒有配對在 Dex 交易所",
+   "這款代幣的當前價格是多少？",
+   "這枚合約地址的數據在哪裡？",
+   "真心的問，這個合語律碼就在 DEX 上面有價沒價？"
+  ]
+ },
+ "get_aggregated_funding_rate": {
+  "desc_hash": "04d1c3cb47aa",
+  "examples": [
+   "BTC 資金費率現在多少？",
+   "幫我比一下 Binance 跟 OKX 的 SOL 費率",
+   "分析一下 BTC 的幣種目前的套利機會",
+   "SOL 的 Funding Rate 現在跟其他交易所有點差很多嗎？",
+   "哪裡的費用比較低？",
+   "100% 預測見底我用什麼策略？",
+   "1thought<channel|>{"
+  ]
+ },
+ "get_aggregated_open_interest": {
+  "desc_hash": "8be3c622d67b",
+  "examples": [
+   "現在全網 BTC 的持倉量分佈在哪裡？",
+   "BTC 還有多少人在撐著？",
+   "不同交易所的 BTC 持倉分布狀況如何？",
+   "查看目前的 Open Interest (OI) 數據。",
+   "各個幣種的 OI 值是多少？",
+   "查詢目前所有場域的 OI 分佈。",
+   "1024 目前有多少持倉量？",
+   "1thought<channel|>{"
+  ]
+ },
+ "get_binance_open_interest_history": {
+  "desc_hash": "4f0a0753b333",
+  "examples": [
+   "看看幣安 BTC 的持倉量變化",
+   "Binance Futures 用戶持倉量是多少？",
+   "BTC 持倉數據最近幾小時有點什麼變化？",
+   "我想知道 Binance 的 OI 預測模型或是歷史數據",
+   "BTC 在幣安的 OI 查詢",
+   "近期 BTC 已經把持倉量增加到多少了？",
+   "幫我查一下 Binance 上的 BTC 持倉量趨勢",
+   "Binance Futures 裡的 BTC OI 數據看看"
+  ]
+ },
+ "get_binance_long_short_ratio": {
+  "desc_hash": "3bc46e7bdc1c",
+  "examples": [
+   "BTC 多空比是多少？",
+   "現在的 Binance 幣安來歷有什麼比例？",
+   "Binance 的長多空比率是什麼？",
+   "多頭多還是空頭多？",
+   "行情目前的多空情緒是什麼？",
+   "查詢目前 BTC 的 Long/Short Ratio。",
+   "給我一個區塊鏈區塊鏈區在幣安的量價100% (Long/Short Ratio)",
+   "{"
+  ]
+ },
+ "get_bybit_open_interest_history": {
+  "desc_hash": "27aac47b7584",
+  "examples": [
+   "Bybit 有什麼 ETH 的持倉量資料嗎？",
+   "幫我查一下 Bybit 上的 ETH 持倉量變動。",
+   "ETH 在 Bybit 10 月 10 月 10 月 10 月 10 月 10 月 10 月 10 月 10 月 10 "
+  ]
+ },
+ "get_coinalyze_long_short_ratio": {
+  "desc_hash": "8906ba9a32b0",
+  "examples": [
+   "現在全市場的長度比是多少?",
+   "現在整個市場的情緒對比是怎樣的跟前幾家交易所?",
+   "目前量能比較偏向哪一邊? 長或空?",
+   "目前的市場情緒大概在什麼比例？",
+   "目前多方和空方的帳戶比例是多少？",
+   "目前全市場的長/空比率是多少？",
+   "我很想知道現在整個市場的人都在做長還是做空。",
+   "現在全市場都是在做量能嗎？"
+  ]
+ },
+ "get_max_markets": {
+  "desc_hash": "1a55e31394fb",
+  "examples": [
+   "查詢MAX交易所的交易對",
+   "MAX有哪些交易對？",
+   "MAX內部的交易對有什麼？",
+   "MAX支持哪些幣種?",
+   "MAX有多少交易對？",
+   "MAX目前有哪些可交易的幣種?"
+  ]
+ },
+ "get_max_currencies": {
+  "desc_hash": "71a385c03e22",
+  "examples": [
+   "USDT 提幣手續費多少?",
+   "USDT 查詢查詢",
+   "這幣能用來質押嗎？",
+   "哪些幣種可以質押?",
+   "能不能把 USDT 換成別的幣？",
+   "```json {"
+  ]
+ },
+ "get_max_index_prices": {
+  "desc_hash": "dc42e73de45b",
+  "examples": [
+   "BTC 價格跟 MAX 指數差很多嗎？",
+   "MAX 指數目前是多少？",
+   "價格差異比對對比對，看看有沒有溢價？",
+   "{"
+  ]
+ },
+ "get_max_tickers": {
+  "desc_hash": "0db703cc2d8e",
+  "examples": [
+   "查詢 MAX 的最新價格",
+   "MAX 價格多少？",
+   "MAX 的行情資訊",
+   "MAX 代幣目前的價格是多少？",
+   "MAX token price check",
+   "MAX 目前的漲跌幅",
+   "看看 MAX 的當前行情",
+   "MAX 的交易對有多少？"
+  ]
+ },
+ "get_max_depth": {
+  "desc_hash": "71e72a608b87",
+  "examples": [
+   "查詢目前的買賣深度的",
+   "看看現在的 Order Book",
+   "我想知道這個幣種的掛單分布",
+   "你要這對交易對的深度數據",
+   "這對的買賣強度如何?",
+   "看一下布蘭奇(Branch) 100% 的量",
+   "```jsonot{"
+  ]
+ },
+ "get_max_klines": {
+  "desc_hash": "92af88e75d86",
+  "examples": [
+   "查詢MAX成交對的K線",
+   "查看MAX的K線圖",
+   "看看MAX的Kline data for [pair]",
+   "```json  {"
+  ]
+ },
+ "get_max_public_trades": {
+  "desc_hash": "042f64573e42",
+  "examples": [
+   "最近的 MAX 交易記錄",
+   "MAX [交易對] 的成交紀錄",
+   "查看最新的 MAX 市場數據",
+   "MAX 有些近期的交易成交量很大嗎？",
+   "Какие могут быть последние recent trade history for MAX? (Wa",
+   "我能看到最近的已經成交的成交記錄嗎?",
+   "我看看最新的 MAX 事務對的交易紀錄。"
+  ]
+ },
+ "get_max_member_info": {
+  "desc_hash": "c4ce664a199a",
+  "examples": [
+   "查詢我的會員身份驗證等級",
+   "我想知道目前的 VIP 交易等級是多少",
+   "我的手續費率是多少？",
+   "什麼時候可以升級到下一個 VIP 級別?",
+   "我現在是哪個層次的s",
+   "現在這個帳戶的費用怎麼算跟之前的版本相比?",
+   "查詢會員資訊",
+   "我是哪種VIP型態?",
+   "我能看到下一步晉升的門檻呢?",
+   "我的手續費是多少？"
+  ]
+ },
+ "get_max_accounts": {
+  "desc_hash": "3520086b9b40",
+  "examples": [
+   "我的錢包裡有哪些幣？",
+   "我帳戶中有哪些代幣?",
+   "我有什麼資產？",
+   "查看我的資產清單",
+   "查詢我的持倉",
+   "有沒有什麼幣在我的錢包裡？",
+   "查詢我的融資費用，或者說我的話費體系有什麼幣？",
+   "Margin account check.",
+   "我有哪些資產？",
+   "I have any coins in my wallet?"
+  ]
+ },
+ "get_max_ad_ratio": {
+  "desc_hash": "472059853660",
+  "examples": [
+   "我的 M-Wallet 融資計劃有什麼維持率？",
+   "這個帳號的 ad_ratio 是多少？",
+   "目前的資產和負債都在哪裡看？",
+   "查詢 M-Wallet 的清算100% 預警警報。",
+   "查看我的融資賬戶狀態。",
+   "Feeling good about my margin, is it high enough?",
+   "我可以用什麼比例來衡量我的融資計劃？",
+   "廣告出現在 where? (Wait, I'm not sure if this tool can provide in"
+  ]
+ },
+ "get_max_orders": {
+  "desc_hash": "da4f5dd9d275",
+  "examples": [
+   "我目前的掛單有哪些？",
+   "我想看看我的訂單，包括還沒賣出的。",
+   "查詢目前在市場上的交易訂單。",
+   "還有哪些訂單還沒處理完？",
+   "現在的成交內容是啥？",
+   "查看我的歷史成交紀錄。",
+   "顯示目前尚未成交完整的訂單。",
+   "描述我目前的交易計劃中的訂單。"
+  ]
+ },
+ "get_max_order": {
+  "desc_hash": "7f1ca21660f9",
+  "examples": [
+   "查詢我的訂單狀態",
+   "查看一下我的委託單",
+   "查看看看這個 ID 為 [order_id] 的單子最後狀況",
+   "這筆交易還有多少剩餘量？",
+   "已經成交了多少？",
+   "```json 💡 {"
+  ]
+ },
+ "get_max_order_history": {
+  "desc_hash": "547996d3ebc7",
+  "examples": [
+   "查詢我的歷史訂單",
+   "我想看看之前的訂單紀錄",
+   "查詢所有歷史訂單",
+   "查看目前的訂單歷程",
+   "查閱近期訂單",
+   "我有一份掛單正在執行中，想確認一下",
+   "能不能看到所有的訂單記錄？",
+   "query_max_order_history"
+  ]
+ },
+ "get_max_my_trades": {
+  "desc_hash": "00b90b1fd3b3",
+  "examples": [
+   "我想看看我的交易紀錄",
+   "查看我的成交明細",
+   "查詢我的歷史成交",
+   "我最近的交易紀錄在哪？",
+   "看看今天的成交單",
+   "幫我列出所有成交記錄",
+   "顯示我的交易明細",
+   "我想分析一下我的盈餘"
+  ]
+ },
+ "get_max_withdrawals": {
+  "desc_hash": "5b0b1827eff4",
+  "examples": [
+   "我想要查看我的出金紀錄",
+   "我想看看我的提現歷史",
+   "查詢我的出金記錄",
+   "查詢提現歷史",
+   "提現到哪裡了？",
+   "查詢過去的提現交易",
+   "我有沒有過往的提現紀錄？",
+   "查詢我的法幣/加密貨幣轉出交易"
+  ]
+ },
+ "get_max_fund_transactions": {
+  "desc_hash": "085119314862",
+  "examples": [
+   "我上次提幣到哪裡了？",
+   "我想看看我的資金異動記錄。",
+   "有什麼交易紀錄？",
+   "查看查詢最新的入金或出金報告。",
+   "剛換成實體貨幣，換成了多少錢？",
+   "{"
+  ]
+ },
+ "get_max_converts": {
+  "desc_hash": "7c52110d2c4d",
+  "examples": [
+   "我最近幾次的閃兌紀錄都在哪裡看？",
+   "上次換了多少 X 代幣到 Y 代幣？",
+   "我之前的閃兌手續費是多少？",
+   "查詢我的閃兌歷史記錄。",
+   "上次轉換工作時，數量有多少？",
+   "或者這個轉換過去花了多少手續費用？",
+   "查看閃兌紀錄",
+   "我想知道上次換成了一個代幣幣種中包含 TWD 這些字眼在前面的。```json.{"
+  ]
+ },
+ "get_max_withdraw_addresses": {
+  "desc_hash": "a3233991a628",
+  "examples": [
+   "我這點 USDT 想提領到哪裡？",
+   "幫我查一下我的 USDT 白名單地址。",
+   "USDT 有哪些提領地址？",
+   "USDT 的提幣白名1402593010.```json{"
+  ]
+ },
+ "get_max_internal_transfers": {
+  "desc_hash": "7f4ace080170",
+  "examples": [
+   "查詢近期到我帳戶的轉帳紀錄",
+   "我想看看最近有哪些人轉錢給我",
+   "查閱轉帳歷史",
+   "有人轉給我了嗎？",
+   "查看內轉項錄",
+   "我的轉帳記錄是哪裡看？",
+   "我在找尋某個特定的內部轉帳交易",
+   "有人的轉帳進來了嗎？"
+  ]
+ },
+ "get_coingecko_coin_price": {
+  "desc_hash": "e8115f596c00",
+  "examples": [
+   "查詢近期最新價格",
+   "現在的比特幣 $BTC$ 正在漲跌？",
+   "目前的市值是什麼？",
+   "看看 CoinGecko 的數據，讓我知道這幾個幣種的s**t**a**r**t**t**e**r**t**l**y**"
+  ]
+ },
+ "get_coingecko_global_stats": {
+  "desc_hash": "7c3c0fd950ec",
+  "examples": [
+   "看看目前的市場行情",
+   "現在的市場狀況如何？",
+   "目前的全局行情```json{"
+  ]
+ },
+ "get_coingecko_trending": {
+  "desc_hash": "7e68404e8a20",
+  "examples": [
+   "現在有哪些熱門代幣？",
+   "最近流行什麼幣?",
+   "幫我看看最近熱點在哪？",
+   "Trending list is what's, for now?",
+   "今天最火紅的 7 個代幣是哪些？",
+   "10月31日30:12:45.000Zhot coins today.",
+   "1thought```jsonon{"
+  ]
+ },
+ "get_cmc_latest_quotes": {
+  "desc_hash": "8d1a0f9c86f8",
+  "examples": [
+   "查詢最新的 BTC 價格",
+   "BTC 的市場價值是多少？",
+   "行情分析：BTC 市場值",
+   "幫我查一下比特幣的當前價格",
+   "ETH 實時報價",
+   "以太幣的市值排名多少？",
+   "CMC 數據同步，請查看 ETH 的最新資訊",
+   "要麼是 BTC 或 ETH，查詢他們最新的市場數據。"
+  ]
+ },
+ "get_cmc_global_metrics": {
+  "desc_hash": "f683a5d8133f",
+  "examples": [
+   "BTC 和 ETH 的比例是多少？",
+   "目前市場行情看不太懂，我看看最新的全球市場數據。",
+   "CoinMarketCap 跟蹤的報告數據有哪些？",
+   "現在的市場宏觀指標在什麼樣式？",
+   "get_cmc_s1t1_market_cap",
+   "get_cmc_global_metrics",
+   "這兩天這兩天這兩天這兩天這兩天這兩天這兩天這兩人語法裡有句話話話話話話話話話話話話話話話話話話話話話話話話話話話話話話話",
+   "get_cmmc_global_metrics"
+  ]
+ },
+ "get_blockchain_btc_stats": {
+  "desc_hash": "db16e43a0d76",
+  "examples": [
+   "比特幣的最新鏈上數據是什麼？",
+   "BTC 網路數據看看。",
+   "現在的挖礦難1g0.5%或者不是？",
+   "目前的比特幣全網算力是多少？",
+   "{"
+  ]
+ },
+ "get_btc_unconfirmed_tx": {
+  "desc_hash": "641353193f0e",
+  "examples": [
+   "比特幣網路現在很擠嗎？",
+   "目前有幾筆沒被確認的交易？",
+   "mempool 的數量是多少？",
+   "Mempool 交易量有多少？",
+   "pending transactions 數量多少？",
+   "總共還有多少筆未確認交易？",
+   "Bitcoin 鏈上數據查看",
+   "目前比特幣網絡 congestion 正在什麼狀況？"
+  ]
+ },
+ "get_crypto_fear_and_greed_index": {
+  "desc_hash": "978d17aa6844",
+  "examples": [
+   "現在的市場情緒什麼狀況？",
+   "目前的 Fear & Greed Index 是多少？",
+   "句子來說，現在是恐懼還是貪婪？",
+   "整個市場的情緒走勢圖可以給我看看。",
+   "這時候進場就對了嗎？",
+   "查詢最新 Fear & Greed Index。",
+   "查看歷史 Fear & Greed Index 數據。",
+   "這個市場目前處於什麼狀態？"
+  ]
+ },
+ "get_latest_crypto_news": {
+  "desc_hash": "2ba5d99c4197",
+  "examples": [
+   "最新的加密貨幣新聞有哪些？",
+   "最近有什麼新的幣圈圈內消息？",
+   "今日最新的幣圈 news。",
+   "現在市場上有什麼大事？",
+   "看看今天的新聞，判斷一下目前的市場情緒。",
+   "有沒有最新的 crypto 相關報導？",
+   "2024 年今天的最新幣圈新聞。",
+   "查閱最新的 CoinTelegraph 的內容。"
+  ]
+ },
+ "fetch_reddit_sentiment": {
+  "desc_hash": "141124f1f10c",
+  "examples": [
+   "Reddit 有沒有相關的 SOL 消息?",
+   "Reddit 上有人在討論 BTC 的行情？",
+   "Reddit 關於 BTC 的論點市場情緒是什麼樣的？",
+   "查看 Reddit 的最新貼文關於 SOL.",
+   "Reddit 上的 BTC 論壇有動態？",
+   "Reddit 討論中提到的 $SOL 100% 比例。",
+   "幫我看看 Reddit 市場的情緒。",
+   "Reddit 有什麼關於 SOL 的話題？"
+  ]
+ },
+ "search_web_duckduckgo": {
+  "desc_hash": "19c37e9416c2",
+  "examples": [
+   "你最近哪一個幣種有最新的新聞？",
+   "幫我查一下今天最新的加密貨幣市場消息。",
+   "現在的比特幣幣價目前在什麼時候發布的？",
+   "當前最新網頁數據來源從哪裡來？",
+   "還有哪些其他一些相關的s**t*o*p*l*e*s*t*e*r*s*t*o*r*e*s*t*e*r*s*t*o*r*e*",
+   "還有哪些其他相關的資訊？",
+   "最新新聞報號100% 查詢出最新的市場動態。",
+   "現在的比特幣幣價 current title and summary for the latest web pages.",
+   "現在的比特幣幣價 current title and summary. To answer time-sensitive"
+  ]
+ },
+ "fetch_trump_truth_posts": {
+  "desc_hash": "0d093e8213b5",
+  "examples": [
+   "川普最近在 Truth Social 上發了什麼？",
+   "Trump Truth Social 相關內容",
+   "川p的 Truth Social 這些天這些天這幾天這幾天這幾天這幾天這幾天這幾天這幾天這幾天這幾天這幾天這幾天這幾成這"
+  ]
+ },
+ "fetch_twitter_user_tweets": {
+  "desc_hash": "2b3d0b7a83af",
+  "examples": [
+   "看看elonmusk的推文",
+   "elonmusk最近在說什麼?",
+   "elonmusk最新的推文有沒有互動數據?",
+   "Twitter上elondonaldtrump都是在說什麼?",
+   "donaldtrump的最新推文有哪些互動數據?",
+   "Elon Musk的推文最新動態",
+   "fetch_twitter_user_tweets功能抓取也包括內容與互動數據?",
+   "fetch_twitter_user_tweets用來抓取某個Twitter人的推文？"
+  ]
+ },
+ "get_btc_treasuries": {
+  "desc_hash": "c56afe2fcbb7",
+  "examples": [
+   "有哪些企業在囤積比特幣？",
+   "MicroStrategy 這些日子有在買入更多比特幣嗎？",
+   "Metaplanet 最近的動態有什麼變化？",
+   "MARA 的持幣量有多少？",
+   "10 個最權威重的企業機構級籌碼其中一項是哪一個？",
+   "1thought<channel|>```json{"
+  ]
+ },
+ "get_crypto_sector_indices": {
+  "desc_hash": "cfd4ab2f3d90",
+  "examples": [
+   "看看現在 DeFi 板塊表現如何？",
+   "最近的 Meme 幣又有漲跌幅多少？",
+   "現在市場處於 risk-on 或 risk-off 狀態嗎？",
+   "哪一個板塊在領漲？",
+   "```json  {"
+  ]
+ },
+ "get_crypto_stocks": {
+  "desc_hash": "609c79c764f6",
+  "examples": [
+   "想看看相關的加密貨幣概念股有哪些？",
+   "我想看 MSTR 的行情。",
+   "這些礦股最近漲跌幅是多少？",
+   "查詢關於 COIN.O 查詢一下。",
+   "目前的 BTC Treasury 區塊在什麼狀況？",
+   "查詢目前交易所平台相關股票。",
+   "要我看看今天的礦場股票行情？"
+  ]
+ },
+ "calculate_indicators": {
+  "desc_hash": "e5c342bdeb54",
+  "examples": [
+   "幫我看看這組 K 線數據的技術指標",
+   "這串數據裡的 RSI 是多少？",
+   "目前是黃金交叉還是死亡空頭包抄？",
+   "MACD 線條在什麼位置？",
+   "建議分析一下這個區塊鏈網址的行情狀況",
+   "計算一下這段期間的s01.thought<channel|>```json  {"
+  ]
+ },
+ "run_backtest": {
+  "desc_hash": "f630e8553bde",
+  "examples": [
+   "用 10,30 均線交叉來跑一波回測",
+   "這組 BTC 的 K 線資料，跑一下 RSI 逆勢的數據看看",
+   "幫我跑個 backtest，用 ma_crossover 策略",
+   "測試一下 RSI 反向策略在這些數據上的表現",
+   "針對這組 K 線，執行 ma_crossover 進行回測",
+   "我想看看如果用 RSI 逆勢來交易這串 K 線",
+   "這筆數據的勝率與最大回撤是多少？跑個均線交叉的回測",
+   "可以用什麼策略來檢索這組資料？（或是：這組資料套用 ma_crossover 或 rsi_reversal 就好）"
+  ]
+ },
+ "backtest_strategy": {
+  "desc_hash": "3c0cb07c9b1d",
+  "examples": [
+   "想看看 BTC 的 ma_crossover 跑起來會怎樣",
+   "ETH 用 RSI 逆勢這個策略有沒有效？",
+   "幫我回測一下 BTC 的均線交叉策略",
+   "RSI 逆勢在 ETH 上表現如何？",
+   "想測試一下 BTC 過去三個月的均線交叉，結果出來嗎？",
+   "我想看看 ETH 跟 RSI 反向操作這套策略在實戰中績效要不要看得到",
+   "幫我跑一趟 BTC 的 ma_crossover 策略",
+   "用 RSI 逆序來做 ETH 的交易，勝率會是多少？"
+  ]
+ },
+ "save_strategy": {
+  "desc_hash": "89e07230e30f",
+  "examples": [
+   "如何建立新的交易策略?",
+   "我想把這個策略設定在我的帳戶中。",
+   "我想修改我的 RSI 策略配置。",
+   "幫我儲存我的交易策略。",
+   "更新我的交易策略參數。",
+   "新增一個新策略。",
+   "我可以更改預設交易對？",
+   "100% 想知道如何保存策略。"
+  ]
+ },
+ "list_strategies": {
+  "desc_hash": "6c9715de39a0",
+  "examples": [
+   "我有哪些保存的策略？",
+   "幫我看看我的自定義策略清單。",
+   "有哪些策略可以選？",
+   "查看我的交易策略列表。",
+   "有哪些預設好的策略？",
+   "查詢目前的策略清語單。",
+   "列出所有已保存的策略配置。",
+   "我目前有幾個策略？"
+  ]
+ },
+ "run_backtest_on_saved_strategy": {
+  "desc_hash": "a5eeb3136167",
+  "examples": [
+   "我想要跑一下這個策略的歷史回測",
+   "我想看看這套策略在過去的行情中表現如何",
+   "幫我執行這次策略的「黃金比例」廣告模型",
+   "用這個名稱的策略來做回測",
+   "我要跑一波回測",
+   "幫我測試這個策略的績效",
+   "想看這組設定的參數下的歷史表現",
+   "你可以幫我跑一下我的存儲策略？"
+  ]
+ },
+ "run_twitter_mention_backtest": {
+  "desc_hash": "7390ba2459fe",
+  "examples": [
+   "elonmusk 提到某個幣的表現如何？",
+   "推文後下一根 K 線開盤買入，這套邏輯下的回測對比 BTC 的異常報酬是什麼？",
+   "調查一下 x1000 成員的評估結果。你覺得這個事件是有運氣好或者是真的有策略？",
+   "```json.{"
+  ]
+ },
+ "detect_market_regime": {
+  "desc_hash": "3420448a4519",
+  "examples": [
+   "現在市場行情什麼樣的？",
+   "現在是牛市還是熊市？",
+   "目前區塊鏈幣圈的行情挺好嗎？",
+   "目前市場趨勢是什麼？",
+   "Market Regime 什麼意思？",
+   "料金或是行情理論模型檢索",
+   "10 分"
+  ]
+ },
+ "analyze_portfolio": {
+  "desc_hash": "0892e4596636",
+  "examples": [
+   "我的 portfolio 怎麼看？",
+   "這幾種幣的相關性是怎樣？",
+   "分析看看我的資產佈局，有沒有過度集中?",
+   "幫我算一下這些幣的關係。",
+   "我的投資組合有風險嗎？",
+   "分析一下我的持倉",
+   "評估我的 holdings 進行調倉建議。",
+   "這個 portfolio 的風險評估真的是很強大的功能。"
+  ]
+ },
+ "run_signal_backtest": {
+  "desc_hash": "37c8c72dc62d",
+  "examples": [
+   "如果你這張圖表上有一個大的成交量，成交量大大的時候下一步價格會怎麼走？",
+   "如果我想知道成交量就是 100,000 成交量變成一萬一千時的歷史績效，那我就能賺錢嗎？",
+   "企業增持結構來說，我們看看有多少次企業增加持有量的時間點點進入，**「別對比對比對比對比對比對比對比對比對比對比對比對比",
+   "這個 ETF 進入流量或者極度恐應感測器也有歷史績效？",
+   "如果我想知道這就是一個好的交易信號。",
+   "如果我知道這個量很大的市場參與者大的成交量時下一步價格往往性很強性很重要。",
+   "如果我知道這個量很大的市場參與者大的成交量時下一步價格往往性很重要。",
+   "```json{"
+  ]
+ },
+ "run_composite_backtest": {
+  "desc_hash": "1c46050f15e6",
+  "examples": [
+   "如果我把「極度恐懼」和「ETF 淨流入」兩個指標一起結合，回測結果會怎樣？",
+   "我想看看同時滿足多個條件的情況。",
+   "A 且 B 的組合式回測（共振），"
+  ]
+ },
+ "create_order": {
+  "desc_hash": "0f5e1b2bea96",
+  "examples": [
+   "在[交易所名稱]買入 0.01 BTC",
+   "幫我賣掉 0.5 ETH",
+   "想知道怎麼下單",
+   "我要來下個單",
+   "買入 0.01 BTC",
+   "賣出 0.5 ETH",
+   "我想購買更多的 BTC",
+   "在[交易所名稱]賣出 0.5 ETH"
+  ]
+ },
+ "cancel_order": {
+  "desc_hash": "1bbae2e2f726",
+  "examples": [
+   "我想要取消我的掛單",
+   "我想把這筆訂單預約訂單變成無效",
+   "幫我撤回一個在某個交易所的單子",
+   "我要取消這個單子",
+   "我想讓那個掛單不要生效",
+   "怎麼取消掛1000枚的BTC幣",
+   "可以幫我撤掉一筆單子嗎？",
+   "我想要把這筆訂單從市場中移除"
+  ]
+ },
+ "explain_crypto_term": {
+  "desc_hash": "84ae303b8fea",
+  "examples": [
+   "什麼是現貨？",
+   "合約交易是什麼意思？",
+   "解釋一下槓桿。",
+   "爆倉怎麼會發生？",
+   "資金費率是什麼意思？",
+   "100% 語義理解：RSI，這叫什麼指標？",
+   "1thought"
+  ]
+ },
+ "get_max_guide": {
+  "desc_hash": "a7c5aeccab1d",
+  "examples": [
+   "MAX 怎麼入金？",
+   "第一次買幣怎麼弄？",
+   "MAX 有手續費嗎？",
+   "怎麼申請 API 金鑰？",
+   "MAX 的安全設定怎麼做？",
+   "想問一下 MAX 的操作教學。",
+   "如何購買代幣？",
+   "關於 MAX 的出金流程。"
+  ]
+ },
+ "get_max_fee_info": {
+  "desc_hash": "5bfdef9c2da3",
+  "examples": [
+   "MAX 手續費是多少？",
+   "怎麼省手續費？",
+   "MAX Token 有什麼用？",
+   "MAX Token 可以拿來抵扣手續費用嗎？",
+   "100% 錢幣/幣種 in MAX 交易時的費用有哪些？",
+   "100% 錢幣/{"
+  ]
+ },
+ "calculate_position_size": {
+  "desc_hash": "8d677cf19924",
+  "examples": [
+   "我有一百萬元的資金總額，如果我要買入某個幣種，應該買多少？",
+   "我想知道如果要設定好的停損時長度時，計算出購買量是多少。",
+   "我有 10w 的資金，這筆交易中最多可以虧到哪裡？",
+   "我有點空頭交易想法，你可以幫我算看看我的倉位規模？",
+   "如果你我現在有 100k USD，我想買入某內項幣種，根據停損距離來計算出購買量應該是多少？",
+   "<h2>銘彥```json注釋：這裡的 JSON 內容包含了使用者可能會在台灣加密貨幣社群或對話中使用的真實口語。</c"
+  ]
+ },
+ "calculate_pnl": {
+  "desc_hash": "5fad2a821f20",
+  "examples": [
+   "我 90 萬買入，100 萬賣出，到底最後實賺多少？",
+   "想知道這筆交易的報酬率，算進了手續費後。",
+   "如果我要回到成本價，這個幣值到多少才行？",
+   "我買入價是 1000 元，賣出價是 100 000 元，獲利計算一下。",
+   "要漲到多少才能保本？",
+   "1thought<channel|>{"
+  ]
+ },
+ "calculate_average_down": {
+  "desc_hash": "5b9de9da9731",
+  "examples": [
+   "如果我現在加碼，我的平均成本會變成多少？",
+   "我剛才加了點貨，平均價格變動計算。",
+   "我要把這筆交易的成本攤平，算一下新的均價。",
+   "目前均價 100 萬，跌到 80 萬時再買入 5 萬，新均價是多少？",
+   "如果我多買一點，我的持倉換算成的平均價格會變多少？",
+   "我想計算攤平成本。如果你我再買一筆，加碼 100,000 元，均價會變成什麼時候？",
+   "Averaging down: calculate new average cost.",
+   "如果我現在補貨，我的平均代幣量會平均到幾個數字？",
+   "如果你我再入金10萬元，新均價算一下。",
+   "我想知道如果不加碼，就不換算計算這項交易的 amount 或 units 4."
+  ]
+ },
+ "calculate_target_sell_price": {
+  "desc_hash": "d97dc6b958aa",
+  "examples": [
+   "如果你想淨賺 10%，得賣到什麼價格？",
+   "我想淨獲利 10%，要賣在哪裡？",
+   "我要拿 10% 的純利潤，價位需要到多少？",
+   "想拿到 19% 的淨報酬率，目標售價需多少？",
+   "10% 的淨獲利是哪都邊界時的價格是多少？",
+   "我想得到 10% 的 net profit, 要賣在什麼時候？",
+   "1"
+  ]
+ },
+ "analyze_figure_sentiment": {
+  "desc_hash": "dbef8090f148",
+  "examples": [
+   "川普剛剛說了什麼？",
+   "馬斯克最近有什麼動態？",
+   "馬斯克發文針對哪個幣種？",
+   "分析一下川普的推特推文。",
+   "馬斯克最新消息對比特幣的.影響是什麼？",
+   "馬克思克近期變動對市場的衝傳果效。",
+   "這個人（川普/馬斯克）剛發新內容，會影響到加密貨幣嗎？",
+   "{"
+  ]
+ },
+ "analyze_crowd_sentiment": {
+  "desc_hash": "c4db456e4aa3",
+  "examples": [
+   "BTC 最近大家怎麼看？",
+   "ETH 幣種的社群情緒什麼時候變動很大？",
+   "目前大眾對比特幣的市場觀點整合分析。",
+   "ETH 的網民有意見分歧？",
+   "用戶想要知道 ETH 市場的整體情感。",
+   "10月10月30%30% 30% 30% 30% 30% 30% 30% 30% 30% 30% 30% 30% 30%"
+  ]
+ },
+ "get_gold_price": {
+  "desc_hash": "66d9456a808a",
+  "examples": [
+   "現在黃金價格是多少？",
+   "PAXG 跟 XAUT 的報價看看。",
+   "今天黃金漲了多少？",
+   "金價目前狀況如何？",
+   "PAXG 和 XAUT 差異在哪？",
+   "查看黃金代幣的數字。",
+   "我想要知道目前的黃金金價。",
+   "MAX 交易對的價格是多少？"
+  ]
+ },
+ "analyze_gold_market": {
+  "desc_hash": "d7ee2b87c362",
+  "examples": [
+   "黃金市場現在什麼狀況？",
+   "幫我分析一下黃金的行情。",
+   "現在適合佈局黃金嗎？",
+   "目前黃金跟 BTC 的相關性相關到哪裡？",
+   "查看黃金綜合簡報。",
+   "10月20日 10.30 10.30 10.30 10.31 10.31 10.31 10.32 10.32 10.32",
+   "{"
+  ]
+ },
+ "remember_about_me": {
+  "desc_hash": "ae124558e66d",
+  "examples": [
+   "你記住我的偏好",
+   "我想讓系統記錄下我的投資風格",
+   "我就是個新手，請記住這點",
+   "我只做現貨100%",
+   "我不碰迷因幣",
+   "如果你再問我，下次就用 MAX 交易",
+   "我對風險承受度是 2% 的",
+   "記得我不是一個專業的用戶"
+  ]
+ },
+ "recall_history": {
+  "desc_hash": "b78e3914be7d",
+  "examples": [
+   "我上次問過 BTC 嗎？",
+   "我想看一下之前的交易紀錄。",
+   "你幫我找一下我之前問過的關於 ETH 的問題。",
+   "我之前有下過什麼單？",
+   "我最近成交的訂單就是什麼？",
+   "我前幾天幾點幾分時長詢問過有關比特幣的資訊？",
+   "I'm looking for my past conversations and trades.",
+   "我之前的對話紀錄中關於 ETH 的評級在什麼時候？",
+   "我想要找一下之前的交易記錄。",
+   "我剛才問過你關於 BTC 的消息。"
+  ]
+ }
+}

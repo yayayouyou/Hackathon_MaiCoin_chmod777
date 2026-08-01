@@ -1,0 +1,69 @@
+# ================================
+# Git 忽略設定
+# ================================
+
+# 環境變數（含 API Keys，絕對不能 commit）
+.env
+*.env
+
+# 虛擬環境
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# 測試 / 覆蓋率
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 日誌
+logs/
+*.log
+
+# 資料庫
+*.db
+*.sqlite
+*.sqlite3
+
+# 開發用臨時腳本（含硬編碼測試主機，不應發布）
+scratch/
+
+# 執行期產物（含真實使用紀錄，不應發布）
+audit_logs/
+conversation_logs/
+strategies.json
+automation/KILL
+run_cards/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# 使用者記憶（私有資料）
+agent_memory/
+etf_flows_store.json
+position_ledger.jsonl
+order_ledger.jsonl
+TRADING_HALTED

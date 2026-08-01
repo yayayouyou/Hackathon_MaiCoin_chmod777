@@ -1,0 +1,32 @@
+# original archive (already extracted into data_set/)
+*.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Node
+node_modules/
+dist/
+build/
+dist-single/
+
+# 單檔預覽（scripts/build-single.mjs 產出，300KB 的 build 產物，不進版控）
+預覽-*.html
+
+# agent scratch (SDD ledgers, briefs, brainstorm mockups, MCP browser output)
+.superpowers/
+.playwright-mcp/
+
+# secrets / credentials
+*.pem
+*credentials*

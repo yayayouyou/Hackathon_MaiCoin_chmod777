@@ -1,0 +1,44 @@
+# Dockerfile.agentcore 是 `COPY . .`，沒有這個檔案就會把金鑰烤進 image layer。
+# 這一份的第一條規則比其他所有規則加起來都重要。
+
+# ── 金鑰。絕對不可進 image ──
+.env
+*.env
+!.env.example
+*.pem
+*.key
+*credentials*
+
+# ── 虛擬環境與快取 ──
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── 執行期產物：容器內會重新生成，帶進去只會夾帶開發機的資料 ──
+audit_logs/
+agent_memory/
+conversation_logs/
+run_cards/
+routing_log.jsonl
+order_ledger.jsonl
+strategies.json
+etf_flows_store.json
+
+# ── 版控與開發工具 ──
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+
+# ── 部署映像不需要的東西 ──
+tests/
+agent_ui/           # 參考實作與開發期終端，不是 AgentCore Runtime 的服務入口
+docs/
+*.md
+!README.md

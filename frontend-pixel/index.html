@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MAIA · 數位廣場</title>
+    <!-- 執行期覆蓋後端網址。改一個 S3 物件 + invalidate，30 秒解決，不用重 build -->
+    <script src="/config.js"></script>
+  </head>
+  <body>
+    <!-- 遊戲畫布與世界標籤層由 game/ 直接操作，不經過 React -->
+    <div id="stage">
+      <canvas id="screen"></canvas>
+      <div id="world-labels"></div>
+    </div>
+    <!-- 常駐 HUD 與非模態疊層。獨立 React root，不受 setLabelsVisible 影響，
+         也不在 movement.mjs 兩個 MutationObserver 的觀測範圍內 -->
+    <div id="hud-root"></div>
+    <!-- React 只掛載彈窗面板 -->
+    <div id="ui-root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "//": [
+    "merge gate 用的寬鬆版（規格 §8.3 規則 6）。",
+    "主檔開著 noUnusedLocals / noUnusedParameters，而半成品 zone 一定會有",
+    "暫時還沒用到的 import —— 逼人寫 `void x;` 或註解掉 import 然後忘記解開，",
+    "換來的是更難發現的錯誤。所以 gate 放行未使用，正式 `npm run build`",
+    "仍然跑嚴格的主檔。",
+    "用法：npm run typecheck:gate"
+  ],
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  }
+}

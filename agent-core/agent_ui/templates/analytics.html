@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAIA · 使用者行為分析</title>
+<style>
+  :root{ --bg:#0a0e14; --panel:#111722; --ink:#e6edf3; --ink2:#9db2c7; --ink3:#5c7690;
+         --acc:#38e1ff; --up:#39d98a; --down:#ff6b6b; --line:rgba(120,160,200,.14); }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,"Noto Sans TC",sans-serif}
+  a{color:var(--acc);text-decoration:none}
+  .wrap{max-width:960px;margin:0 auto;padding:24px 18px 60px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+  h1{font-size:19px;margin:0;letter-spacing:.5px}
+  h1 .dot{color:var(--acc)}
+  .muted{color:var(--ink3);font-size:12.5px}
+  .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .stat .k{color:var(--ink3);font-size:11.5px;text-transform:uppercase;letter-spacing:.6px}
+  .stat .v{font-size:22px;font-weight:650;margin-top:4px}
+  .stat .v.acc{color:var(--acc)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:680px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  .card h2{font-size:13px;margin:0 0 12px;color:var(--ink2);letter-spacing:.4px}
+  .bar-row{display:flex;align-items:center;gap:10px;margin:7px 0;font-size:12.5px}
+  .bar-row .lbl{flex:0 0 40%;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar-row .track{flex:1;height:9px;background:rgba(255,255,255,.05);border-radius:6px;overflow:hidden}
+  .bar-row .fill{height:100%;background:linear-gradient(90deg,var(--acc),#7a5cff);border-radius:6px}
+  .bar-row .n{flex:0 0 34px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums}
+  .search{display:flex;gap:8px;margin-bottom:14px}
+  .search input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:9px 12px;font-size:13px}
+  .search button{background:var(--acc);border:0;color:#04222b;font-weight:650;border-radius:9px;padding:0 16px;cursor:pointer}
+  .conv{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 14px;margin-bottom:9px}
+  .conv .top{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--ink3);margin-bottom:5px}
+  .conv .top .tag{background:rgba(120,160,200,.1);border-radius:5px;padding:1px 7px;color:var(--ink2)}
+  .conv .q{color:var(--ink);font-weight:550}
+  .conv .a{color:var(--ink2);font-size:12.5px;margin-top:3px;max-height:3.2em;overflow:hidden}
+  .empty{color:var(--ink3);padding:18px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1>MAIA<span class="dot">·</span>使用者行為分析</h1>
+      <div class="muted" id="period">載入中…</div></div>
+    <a href="/">← 回聊天控制艙</a>
+  </header>
+
+  <div class="stat-row" id="stats"></div>
+
+  <div class="grid">
+    <div class="card"><h2>模型使用分佈</h2><div id="by_model"></div></div>
+    <div class="card"><h2>角色（人格）分佈</h2><div id="by_persona"></div></div>
+    <div class="card"><h2>常用技能工具 Top 10</h2><div id="top_tools"></div></div>
+    <div class="card"><h2>活躍時段（點鐘）</h2><div id="busiest_hours"></div></div>
+  </div>
+  <div class="card"><h2>常見查詢詞</h2><div id="top_query_terms"></div></div>
+
+  <div class="card">
+    <h2>對話歷史搜尋</h2>
+    <div class="search">
+      <input id="q" placeholder="輸入關鍵字搜尋歷史對話（比對問答內容），留空看最近 50 筆" />
+      <button onclick="loadConversations()">搜尋</button>
+    </div>
+    <div id="conversations"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+function bars(elId, obj) {
+  const el = $(elId);
+  const entries = Object.entries(obj || {});
+  if (!entries.length) { el.innerHTML = '<div class="muted">尚無資料</div>'; return; }
+  const max = Math.max(...entries.map(([, v]) => v)) || 1;
+  el.innerHTML = entries.map(([k, v]) =>
+    `<div class="bar-row"><span class="lbl" title="${esc(k)}">${esc(k)}</span>` +
+    `<span class="track"><span class="fill" style="width:${Math.max(4, v / max * 100)}%"></span></span>` +
+    `<span class="n">${v}</span></div>`).join("");
+}
+
+async function loadSummary() {
+  try {
+    const d = await (await fetch("/api/usage_summary")).json();
+    if (!d.total_turns) { $("period").textContent = "尚無對話記錄"; return; }
+    $("period").textContent = `${(d.first_ts||"").slice(0,10)} ~ ${(d.last_ts||"").slice(0,10)}`;
+    $("stats").innerHTML =
+      `<div class="stat"><div class="k">總對話輪數</div><div class="v acc">${d.total_turns}</div></div>` +
+      `<div class="stat"><div class="k">平均回答長度</div><div class="v">${d.avg_answer_len} 字</div></div>` +
+      `<div class="stat"><div class="k">使用模型數</div><div class="v">${Object.keys(d.by_model||{}).length}</div></div>` +
+      `<div class="stat"><div class="k">用過的技能數</div><div class="v">${Object.keys(d.top_tools||{}).length}</div></div>`;
+    bars("by_model", d.by_model); bars("by_persona", d.by_persona);
+    bars("top_tools", d.top_tools); bars("busiest_hours", d.busiest_hours);
+    bars("top_query_terms", d.top_query_terms);
+  } catch (e) { $("period").textContent = "載入失敗：" + e; }
+}
+
+async function loadConversations() {
+  const q = encodeURIComponent($("q").value.trim());
+  const el = $("conversations");
+  try {
+    const d = await (await fetch(`/api/conversations?q=${q}&limit=50`)).json();
+    const list = (d.conversations || []).slice().reverse();
+    if (!list.length) { el.innerHTML = '<div class="empty">找不到符合的對話</div>'; return; }
+    el.innerHTML = list.map((c) =>
+      `<div class="conv"><div class="top">` +
+        `<span>${esc((c.ts||"").slice(0,16).replace("T"," "))}</span>` +
+        `<span class="tag">${esc(c.model||"")}</span>` +
+        `<span class="tag">${esc(c.persona||"")}</span>` +
+        (c.tools_used && c.tools_used.length ? `<span class="tag">🛠 ${esc(c.tools_used.join(", "))}</span>` : "") +
+      `</div>` +
+      `<div class="q">${esc(c.user_message||"")}</div>` +
+      `<div class="a">${esc(c.assistant_answer||"")}</div></div>`).join("");
+  } catch (e) { el.innerHTML = '<div class="empty">載入失敗：' + esc(e) + '</div>'; }
+}
+
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter") loadConversations(); });
+loadSummary(); loadConversations();
+</script>
+</body>
+</html>

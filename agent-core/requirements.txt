@@ -1,0 +1,99 @@
+# ============================================================
+# AI Crypto Trading Agent - Python dependencies
+# Install: pip install -r requirements.txt
+#
+# ASCII ONLY. Do not put Chinese (or any non-ASCII) in this file.
+# pip decodes requirements.txt with locale.getpreferredencoding(), which on a
+# zh-TW Windows is cp950 -- one UTF-8 comment kills the entire install with
+# "UnicodeDecodeError: 'cp950' codec can't decode byte 0x9a". It fails on every
+# teammate's machine except the one it was written on, and the traceback points
+# at pip rather than at this file.
+# Chinese notes belong in README.md / docs/, not in a dependency manifest.
+# ============================================================
+
+# ---- Web service (agent_ui) ----
+fastapi==0.139.0
+starlette==1.3.1
+uvicorn==0.50.0
+
+# ---- Core & exchanges ----
+ccxt==4.5.64
+requests==2.34.2
+httpx==0.28.1
+python-dotenv==1.2.2
+loguru==0.7.3
+
+# ---- Data sources (maintained community packages, replacing hand-rolled scrapers) ----
+ddgs==9.14.4          # web search; replaces regex scraping of DuckDuckGo HTML
+feedparser==6.0.12    # RSS news parsing; replaces hand-rolled XML
+
+# ---- Crowd sentiment scoring (slow lane, skills/market_intel/sentiment_scorers.py) ----
+# Lightweight lexicon scorer, seeded with crypto slang. Pure Python, no torch.
+vaderSentiment==3.3.2
+# Optional upgrade: CryptoBERT (research-grade 3-class) needs transformers+torch
+# (~2GB). Install separately and set SENTIMENT_ENGINE=cryptobert to enable:
+#   pip install "transformers>=4.44" torch
+
+# ---- Crypto signing ----
+cryptography==49.0.0
+coincurve==21.0.0
+cffi==2.0.0
+pycparser==3.0
+# AES-128-ECB decryption for the key-free CoinGlass scrape
+# (skills/market_data/coinglass_scraper.py)
+pycryptodome==3.23.0
+
+# ---- Data analysis ----
+numpy==2.4.6
+pandas==3.0.3
+ta==0.11.0
+python-dateutil==2.9.0.post0
+tzdata==2026.2
+
+# ---- Typing & validation ----
+pydantic==2.13.4
+pydantic_core==2.46.4
+annotated-types==0.7.0
+typing-inspection==0.4.2
+typing_extensions==4.16.0
+
+# ---- Async HTTP (ccxt deps) ----
+aiodns==4.0.4
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.1
+aiosignal==1.4.0
+anyio==4.14.1
+frozenlist==1.8.0
+multidict==6.7.1
+propcache==0.5.2
+pycares==5.0.1
+yarl==1.24.2
+h11==0.16.0
+httpcore==1.0.9
+
+# ---- Misc utils ----
+attrs==26.1.0
+certifi==2026.6.17
+charset-normalizer==3.4.7
+colorama==0.4.6
+idna==3.18
+packaging==26.2
+Pygments==2.20.0
+six==1.17.0
+urllib3==2.7.0
+win32_setctime==1.2.0
+
+# ---- MCP server ----
+# Must stay on 1.x: mcp 2.0 removed mcp.server.fastmcp, so mcp_server.py and
+# mcp_servers/ would ImportError outright -- tests/test_mcp_server.py would not
+# even collect. Port both servers to the 2.x API before unpinning.
+mcp<2
+
+# ---- Tests ----
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pluggy==1.6.0
+iniconfig==2.3.0
+
+# Bedrock provider. Bundled inside AgentCore/Lambda; needed for local runs.
+boto3>=1.34.0
