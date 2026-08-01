@@ -102,8 +102,10 @@ export async function getMarketRows(quote = 'twd', signal?: AbortSignal): Promis
  *
  * `?fast=1` 直接拒絕：離線示範不該產生任何可以被核准的 token。
  */
+export type OrdType = 'limit' | 'market' | 'post_only';
+
 export async function previewOrder(
-  req: { market: string; side: 'buy' | 'sell'; volume: number; ord_type: 'limit' | 'market'; price?: number },
+  req: { market: string; side: 'buy' | 'sell'; volume: number; ord_type: OrdType; price?: number },
   signal?: AbortSignal,
 ): Promise<OrderPreview> {
   failIfFlagged();

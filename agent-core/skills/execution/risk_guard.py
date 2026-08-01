@@ -21,6 +21,23 @@ MAX_SINGLE_ORDER_LIMIT_TWD = 50000.0   # 單筆最大 5 萬台幣
 MAX_SINGLE_ORDER_LIMIT_USDT = 1500.0   # 單筆最大 1500 美元
 MAX_SLIPPAGE_TOLERANCE = 0.03          # 最大滑點偏離度 3%
 
+# ── 委託型別 ────────────────────────────────────────────────────
+#
+# `post_only`（只掛單／maker-only）是 MAX v3 支援的型別：它只會以 maker 掛上
+# 訂單簿，**如果送出當下就會與對手單成交，交易所直接拒絕整筆單**。因此它是
+# 「我不要立刻成交」最可靠的表達方式 —— 比自己把限價設遠一點可靠，因為後者
+# 在行情跳動時仍然可能被吃掉。
+#
+# 它與 limit 一樣**必須帶價格**：沒有價格就無從判斷會不會立刻成交，
+# 而且不能沿用市價（沿用市價幾乎保證會立刻成交，等於一定被拒）。
+LIMIT_LIKE_ORD_TYPES = ("limit", "post_only")
+SUPPORTED_ORD_TYPES = ("limit", "market", "post_only")
+
+
+def is_limit_like(ord_type: str) -> bool:
+    """這個委託型別是否需要呼叫端提供明確價格。"""
+    return (ord_type or "").lower() in LIMIT_LIKE_ORD_TYPES
+
 def validate_order(
     market: str,
     side: str,
@@ -39,7 +56,7 @@ def validate_order(
     # 0. 基本參數校驗
     if side_upper not in ["BUY", "SELL"]:
         return False, f"風控攔截：不支援的交易方向 {side}"
-    if ord_type_lower not in ["limit", "market"]:
+    if ord_type_lower not in SUPPORTED_ORD_TYPES:
         return False, f"風控攔截：不支援的訂單類型 {ord_type}"
     # 非有限數（NaN/Inf）在比較中恆為 False → 會『fail-open』穿過所有檢查，必須先擋
     def _bad(x: Any) -> bool:
@@ -48,8 +65,8 @@ def validate_order(
     if _bad(volume):
         return False, "風控攔截：下單數量必須為有效正數"
 
-    # 對於市價單，若無價格輸入，使用市場最新價做為估算價格
-    est_price = price if ord_type_lower == "limit" else latest_ticker_price
+    # 限價型（limit / post_only）用委託價；市價單沒有委託價，用市場最新價估算
+    est_price = price if is_limit_like(ord_type_lower) else latest_ticker_price
     if _bad(est_price):
         return False, "風控攔截：估算價格異常（非有效正數）"
     if _bad(latest_ticker_price):
@@ -68,11 +85,11 @@ def validate_order(
         logger.warning(err_msg)
         return False, err_msg
             
-    # 2. 偏離度 (滑點) 校驗 (僅針對限價單)
-    if ord_type_lower == "limit":
+    # 2. 偏離度 (滑點) 校驗 (僅針對有委託價的限價型單：limit / post_only)
+    if is_limit_like(ord_type_lower):
         price_deviation = abs(price - latest_ticker_price) / latest_ticker_price
         if price_deviation > MAX_SLIPPAGE_TOLERANCE:
-            err_msg = f"風控攔截：限價單委託價格 {price} 與市場最新價 {latest_ticker_price} 偏離度達 {price_deviation*100:.2f}%，已超過最大容忍偏離值 {MAX_SLIPPAGE_TOLERANCE*100:.1f}%！"
+            err_msg = f"風控攔截：委託價格 {price} 與市場最新價 {latest_ticker_price} 偏離度達 {price_deviation*100:.2f}%，已超過最大容忍偏離值 {MAX_SLIPPAGE_TOLERANCE*100:.1f}%！"
             logger.warning(err_msg)
             return False, err_msg
             

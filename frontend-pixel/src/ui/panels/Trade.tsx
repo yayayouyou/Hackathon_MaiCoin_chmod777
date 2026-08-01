@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getDashboard, type Balance } from '../../api/account';
-import { getMarketRows, previewOrder, type MarketRow, type OrderPreview } from '../../api/trade';
+import {
+  getMarketRows, previewOrder,
+  type MarketRow, type OrderPreview, type OrdType,
+} from '../../api/trade';
 import { approveOrder, rejectOrder } from '../../api/agent';
 import { useAsync } from '../useAsync';
 import { AsyncState } from '../Panel';
@@ -28,8 +31,19 @@ import { AsyncState } from '../Panel';
 const QUOTES = ['twd', 'usdt', 'btc'] as const;
 type QuoteId = (typeof QUOTES)[number];
 
-/** MAX 的現貨費率。只用來預估，實際以成交回報為準。 */
-const FEE = { limit: 0.0008, market: 0.0016 };
+/**
+ * MAX 的現貨費率。只用來預估，實際以成交回報為準。
+ *
+ * post_only 保證是 maker，所以它吃的一定是 maker 費率 —— 這是「只掛單」除了
+ * 不會立刻成交之外的第二個好處，費率是市價單的一半。
+ */
+const FEE: Record<OrdType, number> = { limit: 0.0008, market: 0.0016, post_only: 0.0008 };
+
+const ORD_TYPES: Array<{ id: OrdType; label: string; hint: string }> = [
+  { id: 'limit', label: '限價', hint: '指定價格，可能立刻成交也可能掛著等' },
+  { id: 'post_only', label: '只掛單', hint: '保證不會立刻成交：會成交的話交易所整筆拒絕（maker 費率）' },
+  { id: 'market', label: '市價', hint: '立刻以市價成交' },
+];
 
 /** 美元計價的穩定幣。使用者下單前最常確認的就是「台幣還有多少、U 還有多少」。 */
 const USD_LIKE = new Set(['USDT', 'USDC', 'USDX']);
@@ -43,6 +57,22 @@ function money(n: number, digits = 2): string {
 function trim(n: number, precision?: number | null): string {
   const p = typeof precision === 'number' && precision >= 0 ? Math.min(precision, 8) : 8;
   return String(Number(n.toFixed(p)));
+}
+
+/** 只掛單的預設讓價幅度。夠遠到不會被行情跳動吃掉，又夠近到還排得上隊伍前面。 */
+const POST_ONLY_OFFSET = 0.001;
+
+/**
+ * 表單的預設委託價。
+ *
+ * 只掛單必須落在**被動側**（買在市價之下、賣在市價之上），否則交易所整筆拒絕。
+ * 預設直接帶市價的話，一選「只掛單」按鈕就是灰的 —— 一個預設就無法送出的
+ * 表單會讓人以為壞了，而不是以為自己要改價。
+ */
+function seedPrice(type: OrdType, side: 'buy' | 'sell', m: MarketRow): string {
+  if (type !== 'post_only') return trim(m.last, m.quote_precision);
+  const k = side === 'buy' ? 1 - POST_ONLY_OFFSET : 1 + POST_ONLY_OFFSET;
+  return trim(m.last * k, m.quote_precision);
 }
 
 export function Trade() {
@@ -256,21 +286,34 @@ function OrderForm({
   onDone: () => void;
 }) {
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
-  const [type, setType] = useState<'limit' | 'market'>('limit');
+  // 預設「只掛單」：這個介面的預設行為應該是最不會意外花錢的那一個。
+  const [type, setType] = useState<OrdType>('post_only');
   const [price, setPrice] = useState('');
   const [volume, setVolume] = useState('');
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<OrderPreview | null>(null);
   const [toast, setToast] = useState<{ text: string; err: boolean } | null>(null);
 
-  // 只在換交易對時帶入價格，不跟著每 5 秒的輪詢走 ——
+  // 只在換交易對時清空數量，不跟著每 5 秒的輪詢走 ——
   // 使用者正在改價格卻被行情蓋掉，是最惱人的交易介面缺陷。
   useEffect(() => {
-    setPrice(String(market.last));
     setVolume('');
     setPreview(null);
     setToast(null);
   }, [market.id]);
+
+  /**
+   * 委託價在「換交易對／換方向／換委託型別」時重新帶入。
+   *
+   * 方向與型別也要重帶，因為只掛單的合法價格區間是**單向**的：買單要在市價
+   * 之下、賣單要在市價之上。從買切到賣時沿用舊價格，等於必定落在錯的那一側。
+   * 一樣不跟輪詢走 —— 依賴只有這三個，行情跳動不會蓋掉手動輸入。
+   */
+  useEffect(() => {
+    setPrice(seedPrice(type, side, market));
+    // 行情每 5 秒換一次物件，但這裡只依賴 id/精度，不依賴 market.last
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market.id, side, type]);
 
   const quoteCur = market.quote.toUpperCase();
   const avail = (asset: string) => balances.find((b) => b.currency === asset)?.balance ?? 0;
@@ -282,7 +325,12 @@ function OrderForm({
   const minBase = market.min_base_amount ?? 0;
 
   const tooSmall = minBase > 0 && vol > 0 && vol < minBase;
-  const invalid = vol <= 0 || (type === 'limit' && px <= 0) || vol > max || tooSmall;
+  /** 只掛單的委託價跨過市價 → 交易所必拒。用最新價近似最佳買/賣價。 */
+  const crossesMarket =
+    type === 'post_only' && px > 0 &&
+    (side === 'buy' ? px >= market.last : px <= market.last);
+  const invalid =
+    vol <= 0 || (type !== 'market' && px <= 0) || vol > max || tooSmall || crossesMarket;
 
   const doPreview = async () => {
     setBusy(true);
@@ -293,7 +341,8 @@ function OrderForm({
         side,
         volume: vol,
         ord_type: type,
-        ...(type === 'limit' && { price: px }),
+        // limit 與 post_only 都必須帶價格；市價單不帶
+        ...(type !== 'market' && { price: px }),
       });
       setPreview(p);
     } catch (e) {
@@ -338,13 +387,17 @@ function OrderForm({
         </button>
       </div>
 
-      <div className="tabs" style={{ marginBottom: 10 }}>
-        {(['limit', 'market'] as const).map((t) => (
-          <button key={t} aria-selected={type === t} onClick={() => setType(t)}>
-            {t === 'limit' ? '限價' : '市價'}
+      <div className="tabs" style={{ marginBottom: 4 }}>
+        {ORD_TYPES.map((t) => (
+          <button key={t.id} aria-selected={type === t.id} onClick={() => setType(t.id)} title={t.hint}>
+            {t.label}
           </button>
         ))}
       </div>
+      {/* 委託型別的差別是「錢會不會現在就出去」，值得一行字講清楚而不是只靠 tooltip */}
+      <p className="muted" style={{ fontSize: 11, marginBottom: 10 }}>
+        {ORD_TYPES.find((t) => t.id === type)?.hint}
+      </p>
 
       <label className="field">
         <span>價格（{quoteCur}）</span>
@@ -356,6 +409,18 @@ function OrderForm({
           onChange={(e) => setPrice(e.target.value)}
         />
       </label>
+
+      {/*
+        只掛單掛不上去的唯一原因就是價格跨過市價，而使用者不會知道「跨過」是
+        哪一邊。直接算給他看，並在會被拒的時候先擋住 —— 送出去被交易所退件
+        才知道，是最差的學習方式。
+      */}
+      {type === 'post_only' && crossesMarket && (
+        <p style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 8 }}>
+          這個價格會立刻成交 → 交易所會整筆拒絕。
+          {side === 'buy' ? '買單要低於' : '賣單要高於'}市價 {money(market.last, 4)}。
+        </p>
+      )}
 
       <label className="field">
         <span>數量（{market.base}）</span>
@@ -496,9 +561,16 @@ function ConfirmOrder({
       <div className="summary">
         <span>方向 / 類型</span>
         <span className={`num ${p.side === 'buy' ? 'up' : 'down'}`}>
-          {p.side === 'buy' ? '買入' : '賣出'} · {p.ord_type === 'limit' ? '限價' : '市價'}
+          {p.side === 'buy' ? '買入' : '賣出'} ·{' '}
+          {p.ord_type === 'market' ? '市價' : p.ord_type === 'post_only' ? '只掛單' : '限價'}
         </span>
       </div>
+      {/* 送出後會發生什麼，在按下去之前講完 */}
+      {p.ord_type === 'post_only' && (
+        <p className="muted" style={{ fontSize: 11, margin: '4px 0' }}>
+          只掛單：掛上訂單簿等待成交，不會立刻成交。若送出當下就會成交，交易所整筆拒絕。
+        </p>
+      )}
       <div className="summary">
         <span>數量</span>
         <span className="num">{p.volume}</span>
