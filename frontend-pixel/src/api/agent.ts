@@ -31,7 +31,14 @@ export type AgentEvent =
   | { type: 'tool_call'; name: string; args?: Record<string, unknown> }
   | { type: 'tool_result'; name: string; result?: unknown }
   /** Reader 淨化層。`injection_detected` 為 true 時值得在畫面上講出來 */
-  | { type: 'reader'; name: string; injection_detected?: boolean; flags?: string[]; reader_used?: boolean }
+  | {
+      type: 'reader';
+      name: string;
+      injection_detected?: boolean;
+      // 後端（reader_agent.py）送的是 {label, snippet} 物件陣列，不是 string[]
+      flags?: { label: string; snippet: string }[];
+      reader_used?: boolean;
+    }
   /** 下單互鎖：模型只能提議，要使用者按下確認才會執行 */
   | { type: 'approval_request'; name: string; token: string; plan: unknown; hash: string; summary: string }
   | { type: 'answer_delta'; content: string }
@@ -179,3 +186,100 @@ export async function getHealth(signal?: AbortSignal): Promise<Health | null> {
     return null;   // 後端沒開就是沒開，不要讓它變成畫面上的紅字
   }
 }
+
+// ── 歷史對話 session（重播）────────────────────────────────
+// 後端端點早就做好（GET /api/sessions、GET /api/session/{id}），存哪由後端決定
+// （dev 本地檔、部署走 S3）。前端只要打這兩支即可，後端沒開就回空/null，不噴紅字。
+
+export type SessionSummary = { id: string; title: string; updated: string; turns: number };
+
+/** 一則可重播 step，對齊後端 conversation_log 的 _REPLAY_TYPES。 */
+export type ReplayStep =
+  | { type: 'persona'; key: string; name: string; icon: string }
+  | { type: 'tool_call'; name: string; args?: Record<string, unknown> }
+  | { type: 'tool_result'; name: string; result?: unknown }
+  | { type: 'final_answer'; content: string };
+
+export type SessionTurn = {
+  ts: string;
+  user: string;
+  model?: string;
+  persona?: string;
+  steps: ReplayStep[];
+};
+export type SessionDetail = {
+  id: string;
+  title: string;
+  created?: string;
+  updated?: string;
+  turns: SessionTurn[];
+};
+
+/** 列出歷史 session 摘要（新到舊）。後端沒開就回空陣列。 */
+export async function listSessions(signal?: AbortSignal): Promise<SessionSummary[]> {
+  try {
+    const res = await fetch('/api/sessions?limit=100', { signal: signal ?? null });
+    if (!res.ok) return [];
+    return ((await res.json()) as { sessions?: SessionSummary[] }).sessions ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** 讀取單一 session 完整內容供重播。找不到回 null。 */
+export async function loadSession(id: string, signal?: AbortSignal): Promise<SessionDetail | null> {
+  try {
+    const res = await fetch(`/api/session/${encodeURIComponent(id)}`, { signal: signal ?? null });
+    if (!res.ok) return null;
+    return (await res.json()) as SessionDetail;
+  } catch {
+    return null;
+  }
+}
+
+// ── 下單核准（human-in-the-loop）────────────────────────────
+// 核准/拒絕端點要帶 X-Approval-Secret 標頭（值 = /api/config 的 approval_secret，
+// 每次後端啟動換一把、只透過同源交給前端，擋跨源 CSRF）。見 agent_ui/app.py:60,695。
+
+/**
+ * 取回本次後端的核准密鑰（同源；失敗回空字串）。
+ *
+ * `export` 是給 `api/trade.ts` 用的 —— 現貨交易面板的 `/api/order_preview`
+ * 也掛同一個 `_require_approval_secret` 守衛。這種安全相關的東西複製第二份
+ * 遲早會兩邊不一致，共用同一個來源比較安全。
+ */
+export async function getApprovalSecret(): Promise<string> {
+  try {
+    const res = await fetch('/api/config');
+    if (!res.ok) return '';
+    return ((await res.json()) as { approval_secret?: string }).approval_secret ?? '';
+  } catch {
+    return '';
+  }
+}
+
+async function postApproval(path: string, token: string): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const secret = await getApprovalSecret();
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Approval-Secret': secret },
+      body: JSON.stringify({ token }),
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok || typeof data.error === 'string') {
+      return { ok: false, detail: typeof data.error === 'string' ? data.error : `HTTP ${res.status}` };
+    }
+    return { ok: true, detail: typeof data.message === 'string' ? data.message : '已送出' };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : '連線失敗' };
+  }
+}
+
+/** 核准並執行一筆待核准訂單。 */
+export const approveOrder = (token: string): Promise<{ ok: boolean; detail: string }> =>
+  postApproval('/api/approve_order', token);
+
+/** 取消一筆待核准訂單。 */
+export const rejectOrder = (token: string): Promise<{ ok: boolean; detail: string }> =>
+  postApproval('/api/reject_order', token);

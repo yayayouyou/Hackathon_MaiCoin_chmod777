@@ -16,6 +16,7 @@ from loguru import logger
 from fastapi import FastAPI, Request, Depends, Header, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
@@ -113,6 +114,8 @@ def _require_approval_secret(x_approval_secret: Optional[str] = Header(default=N
 TICKER_MARKETS = ["btctwd", "ethtwd", "usdttwd", "soltwd", "xrptwd", "dogetwd",
                   "adatwd", "bnbtwd", "ltctwd", "linktwd"]
 _ticker_cache: Dict[str, Any] = {"ts": 0.0, "data": None}
+# 完整市場清單 + 報價（60 秒快取），供前端現貨交易面板的交易對列表
+_markets_cache: Dict[str, Any] = {"ts": 0.0, "data": None}
 
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
@@ -124,6 +127,17 @@ class ChatRequest(BaseModel):
 
 class OrderApprovalRequest(BaseModel):
     token: str
+
+
+class OrderPreviewRequest(BaseModel):
+    """前端下單表單送出的意圖。**它不會下單**，只產生一份待核准的凍結計畫。"""
+    market: str
+    side: str                          # buy / sell
+    volume: float
+    # limit / market / post_only（只掛單：會立即成交的話交易所整筆拒絕）
+    ord_type: str = "limit"
+    price: Optional[float] = None      # 市價單留空；limit 與 post_only 必填
+    exchange: str = "max"
 
 
 class ExportRequest(BaseModel):
@@ -662,13 +676,20 @@ def account_activity():
     out: Dict[str, Any] = {"ok": False}
     try:
         from skills.max_exchange.max_private import (
-            get_max_fund_transactions, get_max_converts, get_max_withdraw_addresses, get_max_my_trades)
+            get_max_fund_transactions, get_max_converts, get_max_withdraw_addresses, get_max_my_trades,
+            _norm_ts_ms)
         try:
             tr = get_max_my_trades(limit=12)
             out["trades"] = [{
                 "market": str(t.get("market", "")).upper(), "side": t.get("side"),
                 "price": t.get("price"), "volume": t.get("volume"), "funds": t.get("funds"),
-                "time_ms": int(t.get("created_at_in_ms") or (int(t.get("created_at") or 0) * 1000)) or None,
+                # ⚠ 走 _norm_ts_ms（與 flow / converts 同一套），不要自己乘 1000。
+                #   MAX v3 的成交紀錄回的是 `created_at` 且**已經是毫秒**，沒有
+                #   `created_at_in_ms` 這個欄位 —— 舊寫法取不到它就掉進 `created_at * 1000`
+                #   的 fallback，時間戳整整大 1000 倍。前端 fmtT() 算出來的 diff 是大負數，
+                #   落進「未滿一小時」那一支再被 Math.max(1, …) 夾住，於是每一筆成交
+                #   都顯示「1 分前」—— 不會看起來壞掉，只是安靜地說謊。
+                "time_ms": _norm_ts_ms(t.get("created_at_in_ms") or t.get("created_at")),
             } for t in (tr if isinstance(tr, list) else [])]
         except Exception:  # noqa: BLE001
             out["trades"] = []
@@ -736,6 +757,67 @@ def get_orderbook(market: str = "btctwd", limit: int = 14):
         return get_max_depth(market, limit=limit)
     except Exception as e:  # noqa: BLE001
         return {"error": str(e)[:120], "bids": [], "asks": []}
+
+
+# MAX 支援的 K 線週期（分鐘）。前端的時間軸切換只能從這裡挑，
+# 送別的數字 MAX 會退件。
+_KLINE_PERIODS = {
+    "1m": 1, "5m": 5, "15m": 15, "30m": 30,
+    "1h": 60, "2h": 120, "4h": 240, "6h": 360, "12h": 720,
+    "1d": 1440, "3d": 4320, "1w": 10080,
+}
+# 依 (market, period, limit) 分別快取 15 秒。K 線最短週期是 1 分鐘，
+# 15 秒的舊資料對圖形沒有可見影響，但能擋掉縮放/平移時的連續重抓。
+_kline_cache: Dict[str, Any] = {}
+
+
+@app.get("/api/klines")
+def get_klines(market: str = "btctwd", timeframe: str = "1h", limit: int = 300):
+    """K 線歷史（MAX 公開資料）— 供前端價格圖。
+
+    回傳已正規化成物件並**把秒級時間戳補成毫秒**：MAX 的 /api/v3/k 回的是
+    `[秒, o, h, l, c, v]`，前端 `new Date(秒)` 會得到 1970 年。這種錯不會讓
+    畫面壞掉，只會讓時間軸安靜地全錯 —— 在後端轉一次，前端就沒有機會轉錯。
+    """
+    tf = (timeframe or "1h").strip().lower()
+    period = _KLINE_PERIODS.get(tf)
+    if period is None:
+        return {"status": "ERROR", "candles": [],
+                "error": f"不支援的週期 {timeframe}；可用：{', '.join(_KLINE_PERIODS)}"}
+    limit = max(10, min(1000, int(limit)))
+
+    key = f"{market.lower()}|{period}|{limit}"
+    now = time.time()
+    hit = _kline_cache.get(key)
+    if hit and now - hit["ts"] < 15:
+        return {"status": "SUCCESS", "market": market, "timeframe": tf,
+                "candles": hit["data"], "cached": True}
+    try:
+        from skills.max_exchange.max_public import get_max_klines
+        raw = get_max_klines(market, limit=limit, period_minutes=period)
+        candles = []
+        for row in (raw if isinstance(raw, list) else []):
+            if not isinstance(row, list) or len(row) < 6:
+                continue
+            try:
+                ts = int(row[0])
+                candles.append({
+                    # 秒 → 毫秒（超過 1e11 視為已是毫秒，防 MAX 之後改格式）
+                    "t": ts * 1000 if ts < 100_000_000_000 else ts,
+                    "o": float(row[1]), "h": float(row[2]),
+                    "l": float(row[3]), "c": float(row[4]), "v": float(row[5]),
+                })
+            except (TypeError, ValueError):
+                continue
+        candles.sort(key=lambda k: k["t"])
+        if len(_kline_cache) > 40:      # 上限：每個交易對 × 週期都會佔一格
+            _kline_cache.clear()
+        _kline_cache[key] = {"ts": now, "data": candles}
+        return {"status": "SUCCESS", "market": market, "timeframe": tf,
+                "candles": candles, "cached": False}
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"/api/klines 失敗：{e}")
+        return {"status": "ERROR", "candles": [], "error": str(e)[:120]}
 
 
 # 一併關進登入牆：公開網址上的無認證 LLM 端點是實際的帳單風險（每一輪最多 8 步、
@@ -886,6 +968,226 @@ def upload_report_to_s3(
         "key": key,
         "download_url": url,
         "expires_in_seconds": 900,
+    }
+
+
+# ── 語音轉文字（Amazon Transcribe 批次）────────────────────────
+def _audio_format(content_type: str) -> str:
+    """瀏覽器 MediaRecorder 的 mimeType → Transcribe MediaFormat。"""
+    ct = (content_type or "").lower()
+    if "webm" in ct:
+        return "webm"
+    if "ogg" in ct or "opus" in ct:
+        return "ogg"
+    if "mp4" in ct or "m4a" in ct or "aac" in ct:
+        return "mp4"
+    if "wav" in ct or "wave" in ct:
+        return "wav"
+    if "flac" in ct:
+        return "flac"
+    if "mpeg" in ct or "mp3" in ct:
+        return "mp3"
+    return "webm"  # Chrome MediaRecorder 預設是 audio/webm;codecs=opus
+
+
+def _run_transcribe(audio: bytes, content_type: str) -> Dict[str, Any]:
+    """（在 threadpool 執行；boto3 與輪詢皆阻塞）音檔 → S3 → Transcribe job → 文字。
+
+    批次沒有『送 blob 同步回文字』的 API，job 只吃 s3:// 物件，所以一定先 put_object。
+    憑證由環境/IAM 提供（同 Bedrock/S3）。轉完把音檔刪掉（隱私）。
+    """
+    import urllib.request
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    bucket = (os.getenv("S3_REPORTS_BUCKET") or "").strip()
+    region = os.getenv("AWS_DEFAULT_REGION") or os.getenv("BEDROCK_REGION") or None
+    lang = (os.getenv("TRANSCRIBE_LANGUAGE") or "zh-TW").strip()
+    fmt = _audio_format(content_type)
+    job = "maia-stt-" + secrets.token_urlsafe(9)
+    key = f"stt/{time.strftime('%Y/%m/%d', time.gmtime())}/{job}.{fmt}"
+
+    s3 = boto3.client("s3", region_name=region)
+    tx = boto3.client("transcribe", region_name=region)
+    try:
+        s3.put_object(Bucket=bucket, Key=key, Body=audio,
+                      ContentType=content_type or f"audio/{fmt}", ServerSideEncryption="AES256")
+        tx.start_transcription_job(
+            TranscriptionJobName=job, LanguageCode=lang, MediaFormat=fmt,
+            Media={"MediaFileUri": f"s3://{bucket}/{key}"})
+    except (BotoCoreError, ClientError) as exc:
+        logger.exception("Transcribe 起始失敗")
+        raise HTTPException(status_code=502, detail="語音轉文字啟動失敗") from exc
+
+    text, failed = "", None
+    for _ in range(40):  # 上限 ~32 秒
+        try:
+            info = tx.get_transcription_job(TranscriptionJobName=job)["TranscriptionJob"]
+        except (BotoCoreError, ClientError):
+            break
+        st = info["TranscriptionJobStatus"]
+        if st == "COMPLETED":
+            try:
+                data = json.loads(urllib.request.urlopen(info["Transcript"]["TranscriptFileUri"], timeout=15).read())
+                text = data["results"]["transcripts"][0]["transcript"]
+            except Exception:  # noqa: BLE001
+                text = ""
+            break
+        if st == "FAILED":
+            failed = info.get("FailureReason")
+            logger.warning(f"Transcribe job FAILED: {failed}")
+            break
+        time.sleep(0.8)
+
+    for fn in (lambda: tx.delete_transcription_job(TranscriptionJobName=job),
+               lambda: s3.delete_object(Bucket=bucket, Key=key)):
+        try:
+            fn()
+        except Exception:  # noqa: BLE001
+            pass
+
+    if failed:
+        raise HTTPException(status_code=422, detail=f"轉錄失敗：{failed}")
+    return {"text": text, "language": lang}
+
+
+@app.post("/api/transcribe")
+async def transcribe(request: Request, _: None = Depends(_require_approval_secret)):
+    """語音轉文字：前端錄音的 raw blob → Amazon Transcribe（批次）→ 回 {text}。
+
+    與下單相同的 same-origin approval secret 守衛，避免公開部署後被人拿去狂刷帳單。
+    前端只送音檔、拿文字；AWS 憑證一律留在後端（同 Bedrock/S3）。
+    """
+    if not (os.getenv("S3_REPORTS_BUCKET") or "").strip():
+        raise HTTPException(status_code=503, detail="尚未設定 S3_REPORTS_BUCKET（批次轉錄需先把音檔放 S3）")
+    audio = await request.body()
+    if not audio or len(audio) < 256:
+        raise HTTPException(status_code=400, detail="音檔為空或過短")
+    if len(audio) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="音檔過大（上限 12MB）")
+    return await run_in_threadpool(_run_transcribe, audio, request.headers.get("content-type") or "")
+
+
+@app.get("/api/markets")
+def get_markets(quote: str = ""):
+    """可交易市場清單 + 當前報價（供前端現貨交易面板的交易對列表）。
+
+    為什麼不用 /api/tickers：那一支只回頂部跑馬燈的 10 個白名單市場。
+    交易面板要能選到帳戶裡真正持有的任何幣，清單必須是完整的。
+
+    帶 60 秒快取 —— 市場清單一天也不會變幾次，但報價要夠新，
+    所以取兩者的折衷：清單與報價一起快取，前端自己每幾秒重抓。
+    """
+    now = time.time()
+    q = (quote or "").strip().lower()
+    if _markets_cache["data"] is not None and now - _markets_cache["ts"] < 60:
+        rows = _markets_cache["data"]
+        return {"status": "SUCCESS", "markets": [r for r in rows if not q or r["quote"] == q], "cached": True}
+    try:
+        from skills.max_exchange.max_public import get_max_markets, _max_public_request
+        mkts = [m for m in (get_max_markets() or []) if m.get("id")]
+        ids = [str(m["id"]).lower() for m in mkts]
+
+        # ⚠ /api/v3/tickers **必須**帶 markets[]，不帶會回 400（不是回全部）。
+        #   市場數量上百，一次塞進 query string 會過長 → 分批打。
+        px: Dict[str, Dict[str, Any]] = {}
+        CHUNK = 60
+        for i in range(0, len(ids), CHUNK):
+            try:
+                for t in (_max_public_request("/api/v3/tickers", {"markets[]": ids[i:i + CHUNK]}) or []):
+                    m = str(t.get("market") or "")
+                    if m:
+                        px[m] = t
+            except Exception:  # noqa: BLE001
+                continue          # 某一批壞掉不該讓整份清單消失，那一批就是沒有報價
+
+        rows: List[Dict[str, Any]] = []
+        for m in mkts:
+            mid = str(m["id"]).lower()
+            t = px.get(mid) or {}
+            try:
+                last = float(t.get("last") or 0)
+                open_ = float(t.get("open") or 0)
+            except (TypeError, ValueError):
+                last, open_ = 0.0, 0.0
+            rows.append({
+                "id": mid,
+                "name": m.get("name"),
+                "base": str(m.get("base_unit") or "").upper(),
+                "quote": str(m.get("quote_unit") or "").lower(),
+                "last": last,
+                "pct": (last / open_ - 1) * 100 if open_ else 0.0,
+                "vol": float(t.get("vol") or 0) if t.get("vol") else 0.0,
+                # 下單表單靠這幾個做前端驗證，不然只能等後端退件才知道打錯。
+                # 欄位名對齊 get_max_markets() 的輸出（它已經改過名，不是 MAX 原始欄位）
+                "min_base_amount": m.get("min_base_amount"),
+                "base_precision": m.get("base_precision"),
+                "quote_precision": m.get("quote_precision"),
+            })
+        rows.sort(key=lambda r: -(r["vol"] * (r["last"] or 0)))
+        _markets_cache.update(ts=now, data=rows)
+        return {"status": "SUCCESS", "markets": [r for r in rows if not q or r["quote"] == q], "cached": False}
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"/api/markets 失敗：{e}")
+        return {"status": "ERROR", "markets": [], "error": str(e)[:120]}
+
+
+@app.post("/api/order_preview")
+def order_preview(req: OrderPreviewRequest, _: None = Depends(_require_approval_secret)):
+    """把前端下單表單的意圖轉成一份**待核准的凍結計畫**，回 token 給前端確認用。
+
+    ⚠ 這一支**不會下單**。它與模型走的是同一條互鎖：先產生計畫、凍結模式與
+      參數、登記成 pending，真正送出一定要再打 /api/approve_order 帶 token。
+      多這一跳的理由是「使用者在畫面上核准的，必須就是實際送出的那一筆」——
+      表單值在確認框開著的時候還可能被改，凍結計畫讓那件事不可能發生。
+
+    ⚠ 模式在這裡就凍住（paper / live）。核准之後 approve_and_execute 依凍結
+      的 mode 執行、不重讀環境變數 —— 否則「在模擬盤按下核准、送出前有人把
+      .env 改成 live」就會變成真單。
+    """
+    from agent import trade_approval as ta
+    from agent.trade_approval import _APPROVAL_TTL_SEC
+    from skills.execution.live_guard import effective_risk_mode, exposure_window
+    from skills.execution.risk_guard import validate_order
+
+    market = (req.market or "").replace("/", "").replace("_", "").lower()
+    side = (req.side or "").lower()
+    ord_type = (req.ord_type or "limit").lower()
+
+    # 取當前市價：市價單用它估算名目金額，限價單用它讓使用者看到偏離多少
+    latest = 0.0
+    try:
+        from skills.max_exchange.max_public import _max_public_request
+        for t in (_max_public_request("/api/v3/tickers", {"markets[]": [market]}) or []):
+            if str(t.get("market")) == market:
+                latest = float(t.get("last") or 0)
+    except Exception as e:  # noqa: BLE001
+        return {"status": "ERROR", "error": f"取不到 {market} 的市價：{str(e)[:80]}"}
+    if latest <= 0:
+        return {"status": "ERROR", "error": f"取不到 {market} 的市價，無法估算金額"}
+
+    ok, why = validate_order(market, side, req.volume, req.price or 0.0, ord_type, latest)
+    if not ok:
+        return {"status": "ERROR", "error": why}
+
+    mode, mode_note = effective_risk_mode()
+    plan = ta.build_order_plan(
+        {"exchange_id": req.exchange, "market": market, "side": side,
+         "volume": req.volume, "price": req.price, "ord_type": ord_type},
+        latest, mode,
+    )
+    token, plan_h = ta.register_pending(plan)
+    return {
+        "status": "SUCCESS",
+        "token": token,
+        "hash": plan_h,
+        "summary": ta.human_summary(plan),
+        "plan": plan,
+        "mode": mode,
+        "mode_note": mode_note,
+        # 讓確認框能顯示「這一筆會用掉多少額度」，而不是送出被擋才知道
+        "exposure": exposure_window(),
+        "ttl_sec": _APPROVAL_TTL_SEC,
     }
 
 

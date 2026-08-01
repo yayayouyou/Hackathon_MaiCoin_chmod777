@@ -105,17 +105,18 @@ export function makeLobby(): Room {
   const stations = [
     // ── 中庭：MAIA（唯一不屬於 MAX 的站點）──
     //
-    // 紫色、圓形、懸浮，跟東翼那一排方正的藍色櫃檯完全不同語彙。
-    // 位置在中庭偏西，離最近的 MAX 站點 160px，中間還隔著一根代幣門柱。
+    // 懸浮機器人：會眨眼、有天線、MAX 藍光。放中庭偏西，離東翼那排 MAX 藍
+    // 站點一段距離、中間隔一根代幣門柱 —— 保留「MAIA 不屬於 MAX 官方櫃檯」
+    // 的空間語彙，但造型用藍色 robot（accent:'max'）取代原本的紫色全息核心。
     //
-    // 互動範圍 frontOf(376,214,64,80) = (368,268,80,60)，右緣 448 刻意停在
-    // 出生點的靠近判定（x 462 起）之外 —— 否則玩家一進場就被自己站著的
-    // 位置彈出「與 MAIA 對話」的提示，而按 E 是要留給玩家自己決定的。
+    // robot 只有 24×34，互動範圍 frontOf(396,254,24,34)=(388,262,40,60)，
+    // 右緣 428 停在出生點靠近判定（x 462 起）之外，一進場不會自彈提示。
+    // 夾在 (348,250)/(444,250) 兩盆綠化之間，中心 x408 剛好置中。
     station({
-      prop: { kind: 'maiapod', x: 376, y: 214 },
+      prop: { kind: 'robot', x: 396, y: 254, accent: 'max' },
       label: '與 MAIA 對話',
       sign: 'MAIA',
-      accent: 'violet',
+      accent: 'max',
       panel: 'agentChat',
     }),
 
@@ -168,6 +169,34 @@ export function makeLobby(): Room {
       accent: 'max',
       panel: 'maxSupport',
     }),
+
+    // ── 東翼南側：我的帳戶三站（綠）──
+    //
+    // 「藍上綠下」：MAX 藍色官方區在北，個人帳戶區壓在它正下方的休息帶。
+    // 三件道具碰撞盒都在 y424..446（休息帶 R1：頂邊 ≥ y384，不進 y300..382
+    // 的主走道 R2），從出生點 (480,322) 沿走道往東南直線可達。原本這塊是
+    // 客服候位區，候位裝飾（迎賓機器人 / 圓桌 / 欄杆）已讓給帳戶三站。
+    station({
+      prop: { kind: 'vault', x: 560, y: 392 },
+      label: '查看我的持倉',
+      sign: '我的金庫',
+      accent: 'green',
+      panel: 'holdings',
+    }),
+    station({
+      prop: { kind: 'hologram', x: 636, y: 396 },
+      label: '分析我的交易性格',
+      sign: '交易性格',
+      accent: 'green',
+      panel: 'behavior',
+    }),
+    station({
+      prop: { kind: 'board', x: 704, y: 392 },
+      label: '核對損益與帳目',
+      sign: '損益對帳',
+      accent: 'green',
+      panel: 'pnlDesk',
+    }),
   ];
 
   /**
@@ -175,7 +204,8 @@ export function makeLobby(): Room {
    * 西邊那組是門廊的等待區，東邊那組是客服辦公區的候位區。
    * 兩組的碰撞盒都在 y≥384（規則 R1）。
    */
-  const seating = [seats(112, 400), seats(600, 424)];
+  // 客服候位圈 seats(600,424) 已移除：那塊地讓給東翼南側的帳戶三站。
+  const seating = [seats(112, 400)];
 
   /*
    * decor 的排版規則（動任何一件之前先讀，函式頂端的註解是完整版）：
@@ -258,21 +288,14 @@ export function makeLobby(): Room {
     { kind: 'plant', x: 40, y: 452 },
     { kind: 'plant', x: 232, y: 400 },
     { kind: 'bench', x: 216, y: 456 },
-    // 中庭：雕像立在地面徽章上當地標，南側兩張長椅面向它 ——
-    // 有人坐著看的東西才像地標。
+    // 中庭：雕像立在地面徽章上當地標，南側一張長椅面向它。
+    // （東側那張長椅 (528,436) 與植栽 (552,458) 已移除，讓出從走道往東南
+    //  到帳戶三站的直線走位，避免長椅碰撞盒卡在路徑上。）
     { kind: 'coinstatue', x: 456, y: 350 },
     { kind: 'bench', x: 400, y: 436 },
-    { kind: 'bench', x: 528, y: 436 },
     { kind: 'plant', x: 368, y: 458 },
-    { kind: 'plant', x: 552, y: 458 },
-    // 東翼：迎賓機器人站在代幣柱南邊，等於站在 MAX 服務區的門口。
-    // 它的碰撞盒 (570,414,20,12) 刻意在客服斜線（經過 y414 時 x 在 708 之後）
-    // 的西邊 —— 這是唯一一件需要對著那條斜線算過位置的裝飾。
-    { kind: 'robot', x: 568, y: 392 },
-    // 候位動線：兩根伸縮帶欄杆把辦公區前的空地變成「候位區」。
-    // 用兩件 32px 的小道具說明一整塊地面的用途，比多擺兩張椅子清楚。
-    { kind: 'queuerail', x: 700, y: 452 },
-    { kind: 'queuerail', x: 748, y: 452 },
+    // 東翼南側原本是客服候位區（迎賓機器人 568,392 + 兩根欄杆 700/748,452），
+    // 已整組讓給帳戶三站（vault/hologram/board），只留最東邊那盆植栽。
     { kind: 'plant', x: 916, y: 400 },
   ];
 
@@ -293,6 +316,14 @@ export function makeLobby(): Room {
     // 就糊成一團 —— 房間的冷調交給地板材質本身，不要靠光去染。
     ambient: '#d2d4e2',
     floor: 'plaza',
+    // 功能分區背景色塊（畫在道具與徽章之下、不影響碰撞或互動）：
+    //   ① MAX 藍：東翼 MAX 官方區（信託櫃檯 / 代幣柱 / 交易台 / 公告 / 活動 / 客服）
+    //   ② 帳戶綠：東翼南側「我的帳戶」三站，壓在 MAX 藍區正下方（藍上綠下）
+    // MAIA 在中庭、不進藍區 —— 它不屬於 MAX 官方，維持這個空間區隔。
+    zones: [
+      { rect: { x: 516, y: 108, w: 428, h: 192 }, tint: '#6f8fff2a', border: '#6f8fff' },
+      { rect: { x: 544, y: 378, w: 224, h: 112 }, tint: '#4ee88a26', border: '#4ee88a' },
+    ],
     /**
      * 兩枚地面徽章，一枚一個翼。
      *
@@ -320,9 +351,9 @@ export function makeLobby(): Room {
       { x: 352, y: 330, facing: 'right', recolor: RECOLORS.npcViolet },
       // 雕像旁的長椅
       { x: 416, y: 458, facing: 'up', recolor: RECOLORS.npcRose },
-      // 客服候位區：一個坐在圓桌邊、一個站在動線欄杆旁
-      { x: 640, y: 402, facing: 'up', recolor: RECOLORS.npcAmber },
-      { x: 704, y: 444, facing: 'right', recolor: RECOLORS.npcGreen },
+      // 東翼南側帳戶區：兩個人在自己的帳戶站前（NPC 非碰撞，不擋走位）
+      { x: 600, y: 470, facing: 'up', recolor: RECOLORS.npcAmber },
+      { x: 736, y: 466, facing: 'up', recolor: RECOLORS.npcGreen },
     ],
     // 出生點就在主走道上：一轉身看到雕像，往東是 MAX 官方區、
     // 往西是兩道門、左前方是 MAIA。四個方向各有東西，而且都走得到。

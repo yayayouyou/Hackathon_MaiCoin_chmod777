@@ -57,7 +57,8 @@ def build_order_plan(args: Dict[str, Any], latest_price: float, mode: str) -> Di
     ord_type = str(args.get("ord_type", "limit")).lower()
     volume = _to_float(args.get("volume")) or 0.0
     price = _to_float(args.get("price"))
-    fill_price = price if (ord_type == "limit" and price is not None) else latest_price
+    # 限價型（limit / post_only）用委託價估算；市價單沒有委託價，用市價
+    fill_price = price if (ord_type in ("limit", "post_only") and price is not None) else latest_price
     market_id = _normalize_market(args.get("market", ""))
     notional_quote = volume * (fill_price or 0.0)
     # 換算成 TWD 才能跟 TWD 核准門檻正確比較；無法換算 → inf 強制人工核准（fail-safe）
@@ -203,7 +204,14 @@ def human_summary(plan: Dict[str, Any]) -> str:
         mode_zh = "🔴 實盤" if plan.get("mode") == "live" else "📝 模擬盤"
         return f"{mode_zh}｜撤銷『全部市場』的所有掛單（含止損/止盈保護單）"
     side_zh = "買入" if plan["side"] == "buy" else "賣出"
-    ot_zh = "市價單" if plan["ord_type"] == "market" else f"限價單 @ {plan.get('price')}"
+    # post_only 一定要在摘要裡講清楚「不會立刻成交」——使用者按下核准時，
+    # 對「會發生什麼」的預期必須正確，這是核准這個動作唯一的意義。
+    _OT_ZH = {
+        "market": "市價單",
+        "limit": f"限價單 @ {plan.get('price')}",
+        "post_only": f"只掛單 @ {plan.get('price')}（maker，會立即成交則整筆被拒）",
+    }
+    ot_zh = _OT_ZH.get(plan["ord_type"], f"{plan['ord_type']} @ {plan.get('price')}")
     mode_zh = "🔴 實盤" if plan["mode"] == "live" else "📝 模擬盤"
     nt = plan.get("est_notional_twd")
     nt_zh = f"{nt:,.0f} TWD" if isinstance(nt, (int, float)) and math.isfinite(nt) else "金額無法估算（需人工確認）"

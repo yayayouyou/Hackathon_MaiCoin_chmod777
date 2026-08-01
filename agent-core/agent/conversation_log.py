@@ -136,67 +136,38 @@ def _safe_sid(session_id: str) -> Optional[str]:
     return session_id if session_id and _SID_RE.match(session_id) else None
 
 
-def save_session_turn(session_id: str, user_message: str, steps: List[Dict[str, Any]],
-                      model: str = "", persona: str = "") -> None:
-    """把一輪對話（使用者訊息 + 可重播的 steps）追加到該 session 檔（原子寫入）。失敗僅記 log 不拋。"""
-    sid = _safe_sid(session_id)
-    if not sid:
-        return
-    try:
-        os.makedirs(_SESS_DIR, exist_ok=True)
-        path = os.path.join(_SESS_DIR, f"{sid}.json")
-        sess: Dict[str, Any] = {"id": sid, "created": _now(), "title": "", "turns": []}
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    sess = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                pass
-        replay = [s for s in (steps or []) if s.get("type") in _REPLAY_TYPES]
-        sess.setdefault("turns", []).append({
-            "ts": _now(), "user": user_message or "", "model": model, "persona": persona, "steps": replay,
-        })
-        if not sess.get("title"):
-            sess["title"] = (user_message or "新對話")[:40]
-        sess["updated"] = _now()
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(sess, f, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)   # 原子替換，避免半寫檔
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"session 存檔失敗（略過）: {e}")
+# ── 可插拔儲存後端 ─────────────────────────────────────────────
+#  設了 S3_REPORTS_BUCKET → 存 S3（沿用報告端點同一個 bucket，sessions/ 前綴）；
+#  否則存本地磁碟（dev 用）。部署到 AgentCore（容器 ephemeral 磁碟）時本地檔會隨
+#  容器重啟消失，所以正式環境一定要走 S3。憑證由 IAM role / 環境提供，同報告端點。
+def _s3_bucket() -> str:
+    # 讀在函式內而非模組層，避免這支被 import 早於 load_dotenv 時抓不到值
+    return (os.getenv("S3_REPORTS_BUCKET") or "").strip()
 
 
-def list_sessions(limit: int = 100) -> List[Dict[str, Any]]:
-    """列出所有 session 摘要（id/title/updated/輪數），依更新時間新到舊。"""
-    out: List[Dict[str, Any]] = []
-    if not os.path.isdir(_SESS_DIR):
-        return out
-    for name in os.listdir(_SESS_DIR):
-        if not name.endswith(".json"):
-            continue
+def _s3_prefix() -> str:
+    return (os.getenv("S3_SESSIONS_PREFIX") or "sessions/").strip()
+
+
+def _s3_client():
+    import boto3
+    region = os.getenv("AWS_DEFAULT_REGION") or os.getenv("BEDROCK_REGION") or None
+    return boto3.client("s3", region_name=region)
+
+
+def _s3_key(sid: str) -> str:
+    return f"{_s3_prefix()}{sid}.json"
+
+
+def _load_raw(sid: str) -> Optional[Dict[str, Any]]:
+    """讀一個 session 的完整 dict（S3 或本地）；不存在/壞掉一律回 None。"""
+    bucket = _s3_bucket()
+    if bucket:
         try:
-            with open(os.path.join(_SESS_DIR, name), "r", encoding="utf-8") as f:
-                s = json.load(f)
-            out.append({
-                "id": s.get("id", name[:-5]),
-                "title": s.get("title") or "（未命名）",
-                "updated": s.get("updated") or s.get("created", ""),
-                "turns": len(s.get("turns", [])),
-            })
-        except (json.JSONDecodeError, OSError):
-            continue
-    out.sort(key=lambda x: x.get("updated", ""), reverse=True)
-    return out[:limit]
-
-
-def load_session(session_id: str) -> Optional[Dict[str, Any]]:
-    """讀取完整 session（含每輪 steps 與圖表數據）供前端重播。"""
-    sid = _safe_sid(session_id)
-    if not sid:
-        return None
+            obj = _s3_client().get_object(Bucket=bucket, Key=_s3_key(sid))
+            return json.loads(obj["Body"].read())
+        except Exception:  # noqa: BLE001 — NoSuchKey 或壞掉都當作沒有
+            return None
     path = os.path.join(_SESS_DIR, f"{sid}.json")
     if not os.path.exists(path):
         return None
@@ -205,6 +176,111 @@ def load_session(session_id: str) -> Optional[Dict[str, Any]]:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return None
+
+
+def _store_raw(sid: str, sess: Dict[str, Any]) -> None:
+    """寫一個 session 的完整 dict（S3 put_object 或本地原子寫入）。"""
+    body = json.dumps(sess, ensure_ascii=False)
+    bucket = _s3_bucket()
+    if bucket:
+        _s3_client().put_object(
+            Bucket=bucket, Key=_s3_key(sid),
+            Body=body.encode("utf-8"),
+            ContentType="application/json; charset=utf-8",
+            ServerSideEncryption="AES256",   # 與報告端點一致，bucket 維持私有加密
+        )
+        return
+    os.makedirs(_SESS_DIR, exist_ok=True)
+    path = os.path.join(_SESS_DIR, f"{sid}.json")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(body)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)   # 原子替換，避免半寫檔
+
+
+def _summarize(sess: Dict[str, Any], fallback_id: str) -> Dict[str, Any]:
+    return {
+        "id": sess.get("id", fallback_id),
+        "title": sess.get("title") or "（未命名）",
+        "updated": sess.get("updated") or sess.get("created", ""),
+        "turns": len(sess.get("turns", [])),
+    }
+
+
+def save_session_turn(session_id: str, user_message: str, steps: List[Dict[str, Any]],
+                      model: str = "", persona: str = "") -> None:
+    """把一輪對話（使用者訊息 + 可重播 steps）追加到該 session（S3 或本地）。失敗僅記 log 不拋。
+
+    注意：這是 read-modify-write，同一 session 若並發寫入會 race —— 但單一使用者的對話
+    是循序送出（前端等串流結束才送下一則），實務上不會踩到。"""
+    sid = _safe_sid(session_id)
+    if not sid:
+        return
+    try:
+        sess = _load_raw(sid) or {"id": sid, "created": _now(), "title": "", "turns": []}
+        replay = [s for s in (steps or []) if s.get("type") in _REPLAY_TYPES]
+        sess.setdefault("turns", []).append({
+            "ts": _now(), "user": user_message or "", "model": model, "persona": persona, "steps": replay,
+        })
+        if not sess.get("title"):
+            sess["title"] = (user_message or "新對話")[:40]
+        sess["updated"] = _now()
+        _store_raw(sid, sess)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"session 存檔失敗（略過）: {e}")
+
+
+def list_sessions(limit: int = 100) -> List[Dict[str, Any]]:
+    """列出所有 session 摘要（id/title/updated/輪數），依更新時間新到舊。"""
+    out: List[Dict[str, Any]] = []
+    bucket = _s3_bucket()
+    if bucket:
+        # S3：list_objects_v2 拿 key，再逐一 GET 取摘要。demo 規模（數十個）可接受；
+        # 真要規模化再改存物件 metadata 或改用 DynamoDB。
+        try:
+            client = _s3_client()
+            prefix = _s3_prefix()
+            token: Optional[str] = None
+            keys: List[str] = []
+            while True:
+                kw: Dict[str, Any] = {"Bucket": bucket, "Prefix": prefix}
+                if token:
+                    kw["ContinuationToken"] = token
+                resp = client.list_objects_v2(**kw)
+                keys.extend(o["Key"] for o in resp.get("Contents", []) if o["Key"].endswith(".json"))
+                token = resp.get("NextContinuationToken")
+                if not token:
+                    break
+            for key in keys:
+                try:
+                    s = json.loads(client.get_object(Bucket=bucket, Key=key)["Body"].read())
+                    out.append(_summarize(s, key[len(prefix):-5]))
+                except Exception:  # noqa: BLE001
+                    continue
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"list_sessions（S3）失敗: {e}")
+    elif os.path.isdir(_SESS_DIR):
+        for name in os.listdir(_SESS_DIR):
+            if not name.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(_SESS_DIR, name), "r", encoding="utf-8") as f:
+                    s = json.load(f)
+                out.append(_summarize(s, name[:-5]))
+            except (json.JSONDecodeError, OSError):
+                continue
+    out.sort(key=lambda x: x.get("updated", ""), reverse=True)
+    return out[:limit]
+
+
+def load_session(session_id: str) -> Optional[Dict[str, Any]]:
+    """讀取完整 session（含每輪 steps 與圖表數據）供前端重播（S3 或本地）。"""
+    sid = _safe_sid(session_id)
+    if not sid:
+        return None
+    return _load_raw(sid)
 
 
 # ──────────────────────────────────────────────

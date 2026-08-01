@@ -20,7 +20,13 @@ export default async function state({ browser, ok }) {
     await page.close();
   }
 
-  // ── 不向使用者索取金鑰、帳戶失敗要有提示、收藏存 localStorage ──
+  // ── 金鑰完全不在瀏覽器、收藏存 localStorage ──
+  //
+  // ⚠ 這一段原本是「在面板裡填 access/secret → 持倉解鎖 → 檢查金鑰沒進
+  //   localStorage」。金鑰改由後端 .env 保管（HMAC 簽章在伺服器端完成）之後，
+  //   那個輸入框已經移除，所以斷言換成**更強**的版本：不是「金鑰沒有被寫進
+  //   localStorage」，而是「前端根本沒有地方可以輸入金鑰」。
+  //   收藏與暱稱的持久化斷言原封不動 —— 它們跟金鑰無關。
   {
     const page = await openPage(browser);
     await page.evaluate(() => localStorage.clear());
@@ -29,19 +35,15 @@ export default async function state({ browser, ok }) {
 
     await page.keyboard.press('KeyI');
     await page.waitForTimeout(800);
-    // 簽名在後端做，瀏覽器不該持有交易所金鑰 —— 這個面板不能再出現密碼欄位。
-    ok('不再向使用者索取交易所金鑰',
-      (await page.locator('.trade input[type=password]').count()) === 0);
-    // exact 不可省：HUD 那張角色卡的無障礙名稱含「○ 未連接」，而 getByRole 的
-    // name 預設是子字串比對 —— 少了 exact 會同時命中兩顆按鈕，Playwright 的
-    // strict mode 直接丟例外，整支套件中斷。
-    await page.getByRole('button', { name: '連接', exact: true }).click();
-    await page.waitForTimeout(1200);
-    // 測試環境沒有後端，帳戶必定讀不到。要看到的是可讀的提示，
-    // 不是白畫面，更不是一張憑空生出來的持倉表。
-    const account = await page.locator('.trade .col').last().textContent();
-    ok('後端讀不到帳戶時顯示可讀提示', /連線失敗|無法|尚未|請先登入/.test(account),
-      account.slice(0, 40).replace(/\s+/g, ' '));
+    ok('前端沒有任何密碼輸入框（金鑰不經手瀏覽器）',
+      (await page.locator('input[type=password]').count()) === 0);
+    // 餘額在交易面板第三欄的「餘額」分頁（第三欄預設顯示價格圖）
+    await page.locator('.trade > .col').nth(2).locator('.tabs button', { hasText: '餘額' }).click();
+    await page.waitForTimeout(600);
+    ok('不需要前端金鑰就能顯示餘額',
+      (await page.locator('.trade > .col').nth(2).innerText()).includes('TWD'));
+    ok('localStorage 沒有金鑰痕跡',
+      await page.evaluate(() => !/secret|apikey|api_key/i.test(JSON.stringify(localStorage))));
 
     await page.locator('.tabs button', { hasText: '收藏' }).click();
     await page.waitForTimeout(700);
@@ -73,7 +75,8 @@ export default async function state({ browser, ok }) {
     await page.waitForTimeout(1000);
     await page.keyboard.press('KeyI');
     await page.waitForTimeout(900);
-    ok('重整後回到未連接', await page.locator('.gate-mask').first().isVisible());
+    ok('重整後前端仍然沒有金鑰輸入框',
+      (await page.locator('input[type=password]').count()) === 0);
     await page.locator('.tabs button', { hasText: '收藏' }).click();
     await page.waitForTimeout(900);
     ok('重整後收藏還在', (await page.locator('.rank-row').count()) === 1,

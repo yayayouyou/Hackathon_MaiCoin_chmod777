@@ -1,7 +1,67 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { setViewInset } from '../../engine/viewport';
-import { ask, subscribeLive, toolLabel, useChat } from '../../ui/chatStore';
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import {
+  approveOrder,
+  ask,
+  loadSessionInto,
+  newConversation,
+  rejectOrder,
+  subscribeLive,
+  toolLabel,
+  toolSource,
+  useChat,
+  type ChartItem,
+  type ProvItem,
+} from '../../ui/chatStore';
+import { renderMarkdown } from '../../ui/markdown';
+import { chartSpecFor, Disclaimer, planAgentBody } from '../../ui/vizCards';
+import { listSessions, type SessionSummary } from '../../api/agent';
+import { transcribeAudio } from '../../api/stt';
 import { closeChatDock, openChatDock, useDock } from '../dockStore';
+
+/** 把一則帶圖表的 agent 答案渲染成「文字 markdown + 圖表卡」交錯的節點（規劃見 vizCards.planAgentBody）。 */
+function renderAgentBody(text: string, charts: ChartItem[]): ReactNode {
+  return (
+    <>
+      {planAgentBody(text, charts).map((p, i) => {
+        if (p.kind === 'text') {
+          return (
+            <div key={i} className="chat-msg chat-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(p.text) }} />
+          );
+        }
+        const node = chartSpecFor(p.item.tool, p.item.result, p.item.args);
+        return node ? (
+          <div key={i} className="maia-viz" data-src={toolSource(p.item.tool)}>
+            {node}
+          </div>
+        ) : null;
+      })}
+    </>
+  );
+}
+
+/** 答案下方可展開的「依據」列：這輪查過哪些資料來源 + 關鍵數值（來源色編碼）。 */
+function Provenance({ items }: { items: ProvItem[] }): ReactNode {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="maia-prov">
+      <button className="maia-prov-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        {open ? '▾' : '▸'} 依據 · {items.length} 項資料來源
+      </button>
+      {open && (
+        <div className="maia-prov-body">
+          {items.map((p) => (
+            <div key={p.id} className="maia-prov-item" data-src={p.source}>
+              <span className="maia-prov-tool">{toolLabel(p.tool)}</span>
+              {p.detail && <span className="maia-prov-detail">{p.detail}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * MAIA 側邊 dock —— **非模態**。世界在它旁邊繼續跑。
@@ -28,8 +88,38 @@ const SUGGESTIONS = [
   '這一年的手續費花了多少',
 ];
 
-/** dock 展開時的寬度。同一個數字要餵給鏡頭，否則角色會躲進 dock 底下。 */
-const DOCK_W = 340;
+/** dock 展開時的寬度：預設放大到 400，可拖曳左緣調整（存 localStorage），夾在 min/max 之間。
+ *  同一個數字要餵給鏡頭 setViewInset，否則角色會躲進 dock 底下。 */
+const DOCK_DEFAULT = 400;
+const DOCK_MIN = 320;
+const DOCK_MAX = 680;
+const DOCK_W_KEY = 'maia-dock-w';
+const clampW = (w: number): number => Math.min(DOCK_MAX, Math.max(DOCK_MIN, Math.round(w)));
+
+/**
+ * 這個 workshop 帳號實測可用的 Claude 模型（opus-5/opus-4-8/sonnet-5 未授權）。
+ * 清單寫死即可 —— 帳號授權在活動期間固定，不值得為它多開一個 /api/models 的
+ * bedrock 分支。選到的 id 原封不動送進 POST /api/chat，後端 factory 認得含
+ * anthropic/claude 的 id（見 agent/llm/factory.py）。
+ */
+const MODELS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'us.anthropic.claude-opus-4-5-20251101-v1:0', label: 'Opus 4.5' },
+  { id: 'us.anthropic.claude-sonnet-4-6', label: 'Sonnet 4.6' },
+  { id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Sonnet 4.5' },
+  { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Haiku 4.5' },
+];
+const DEFAULT_MODEL = 'us.anthropic.claude-opus-4-5-20251101-v1:0';
+const MODEL_KEY = 'maia-model';
+
+/** ISO 時間 → 「MM-DD HH:mm」。不做 Date 解析，直接切字串（後端已是台北時間）。 */
+const fmtWhen = (iso: string): string => (iso || '').slice(5, 16).replace('T', ' ');
+
+/** 瀏覽器是否支援語音輸入所需的原生 API（無則不顯示麥克風鈕）。 */
+const MIC_SUPPORTED =
+  typeof navigator !== 'undefined' &&
+  !!navigator.mediaDevices &&
+  typeof navigator.mediaDevices.getUserMedia === 'function' &&
+  typeof MediaRecorder !== 'undefined';
 
 function Elapsed({ busy }: { busy: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -56,8 +146,111 @@ function Elapsed({ busy }: { busy: boolean }) {
 
 export function AgentDock() {
   const { chat: open } = useDock();
-  const { msgs, chips, status, busy, approval } = useChat();
+  const { msgs, chips, status, busy, approval, readerAlerts, charts } = useChat();
   const [text, setText] = useState('');
+
+  // dock 寬度：可拖曳左緣調整，存 localStorage。dockWRef 讓拖曳結束時存到最新值。
+  const [dockW, setDockW] = useState<number>(() => {
+    try {
+      const v = parseInt(localStorage.getItem(DOCK_W_KEY) ?? '', 10);
+      return Number.isFinite(v) ? clampW(v) : DOCK_DEFAULT;
+    } catch {
+      return DOCK_DEFAULT;
+    }
+  });
+  const dockWRef = useRef(dockW);
+  dockWRef.current = dockW;
+
+  /** 按住左緣拖曳調整寬度。dock 靠右 → 寬度 = 視窗寬 − 滑鼠 x。放開才寫 localStorage。 */
+  const startResize = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    const onMove = (ev: MouseEvent) => setDockW(clampW(window.innerWidth - ev.clientX));
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+      try {
+        localStorage.setItem(DOCK_W_KEY, String(dockWRef.current));
+      } catch {
+        /* 無痕模式寫不了就算了 */
+      }
+    };
+    document.body.style.userSelect = 'none'; // 拖曳時別選到文字
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
+  // 選到的模型記在 localStorage，重整/收合再開都還在。無痕模式讀寫失敗就退回預設。
+  const [model, setModel] = useState<string>(() => {
+    try {
+      return localStorage.getItem(MODEL_KEY) ?? DEFAULT_MODEL;
+    } catch {
+      return DEFAULT_MODEL;
+    }
+  });
+
+  // 歷史對話抽屜。清單在打開時才抓（後端 GET /api/sessions），不常駐輪詢。
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [histLoading, setHistLoading] = useState(false);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    let alive = true;
+    setHistLoading(true);
+    void listSessions()
+      .then((s) => alive && setSessions(s))
+      .finally(() => alive && setHistLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [historyOpen]);
+
+  // 語音輸入：原生 MediaRecorder 錄音 → 停止後送後端 /api/transcribe → 文字填進輸入框（不自動送）。
+  const [recording, setRecording] = useState(false);
+  const [sttBusy, setSttBusy] = useState(false);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  const startMic = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setRecording(false);
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' });
+        if (blob.size < 800) return; // 幾乎沒講話就略過
+        setSttBusy(true);
+        transcribeAudio(blob)
+          .then((t) => {
+            const clean = t.trim();
+            if (clean) {
+              setText((prev) => (prev ? `${prev} ${clean}` : clean));
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }
+          })
+          .catch(() => {
+            /* 轉錄失敗：靜默收掉，不動已打的字（MVP 版） */
+          })
+          .finally(() => setSttBusy(false));
+      };
+      recRef.current = rec;
+      rec.start();
+      setRecording(true);
+    } catch {
+      // 拒絕麥克風權限（NotAllowedError）等 → 保持原狀，不擋打字
+      setRecording(false);
+    }
+  }, []);
+
+  const toggleMic = useCallback(() => {
+    if (recording) recRef.current?.stop();
+    else void startMic();
+  }, [recording, startMic]);
 
   const liveRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -68,9 +261,9 @@ export function AgentDock() {
    * 收起來時要記得歸零 —— 否則世界會永遠留著一條看不見的邊界。
    */
   useEffect(() => {
-    setViewInset({ right: open ? DOCK_W : 0 });
+    setViewInset({ right: open ? dockW : 0 });
     return () => setViewInset({ right: 0 });
-  }, [open]);
+  }, [open, dockW]);
 
   // 串流文字的命令式通道。dock 重新掛載時要把已經串出來的字補回去，
   // 否則收合再打開會看到答案憑空少了一半。
@@ -108,9 +301,9 @@ export function AgentDock() {
   const send = useCallback(
     (q: string) => {
       setText('');
-      void ask(q);
+      void ask(q, model);
     },
-    [],
+    [model],
   );
 
   if (!open) {
@@ -124,12 +317,44 @@ export function AgentDock() {
   }
 
   return (
-    <aside className="maia-dock" style={{ width: DOCK_W }} data-testid="agent-dock">
+    <aside className="maia-dock" style={{ width: dockW }} data-testid="agent-dock">
+      <div className="maia-dock-resize" onMouseDown={startResize} title="拖曳調整寬度" />
       <header className="maia-dock-head">
         <span className="maia-dot" data-busy={busy ? '1' : '0'} />
         <h2>MAIA</h2>
         <span className="maia-sub">{busy ? status || '連線中…' : '隨時待命'}</span>
         <Elapsed busy={busy} />
+        <button
+          className="maia-hist"
+          data-open={historyOpen ? '1' : '0'}
+          onClick={() => setHistoryOpen((v) => !v)}
+          title="歷史對話"
+          aria-label="歷史對話"
+        >
+          歷史
+        </button>
+        <select
+          className="maia-model"
+          value={model}
+          disabled={busy}
+          title="切換 AI 模型（Opus 最強、Sonnet 平衡、Haiku 最快）"
+          aria-label="切換 AI 模型"
+          onChange={(e) => {
+            const id = e.target.value;
+            setModel(id);
+            try {
+              localStorage.setItem(MODEL_KEY, id);
+            } catch {
+              /* 無痕/隱私模式讀寫 localStorage 會丟；只在記憶體記著即可 */
+            }
+          }}
+        >
+          {MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
         <button
           className="maia-x"
           onClick={() => {
@@ -143,12 +368,67 @@ export function AgentDock() {
         </button>
       </header>
 
-      <div className="maia-thread">
-        {msgs.map((m) => (
-          <div key={m.id} className={`chat-msg${m.who === 'me' ? ' me' : ''}`}>
-            {m.text}
+      {historyOpen && (
+        <div className="maia-history" data-testid="history-drawer">
+          <div className="maia-history-head">
+            <button
+              className="btn"
+              onClick={() => {
+                newConversation();
+                setHistoryOpen(false);
+              }}
+            >
+              ＋ 新對話
+            </button>
+            <button className="maia-x" onClick={() => setHistoryOpen(false)} aria-label="關閉歷史">
+              ✕
+            </button>
           </div>
-        ))}
+          <div className="maia-history-list">
+            {histLoading && <div className="chat-msg muted">載入中…</div>}
+            {!histLoading && sessions.length === 0 && (
+              <div className="chat-msg muted">還沒有歷史對話。開始聊天後會自動存檔。</div>
+            )}
+            {sessions.map((s) => (
+              <button
+                key={s.id}
+                className="maia-history-item"
+                title={s.title}
+                onClick={() => {
+                  void loadSessionInto(s.id);
+                  setHistoryOpen(false);
+                }}
+              >
+                <span className="maia-history-title">{s.title}</span>
+                <span className="maia-history-meta">
+                  {s.turns} 則 · {fmtWhen(s.updated)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="maia-thread">
+        {msgs.map((m) =>
+          m.who === 'me' ? (
+            // 使用者自己打的字維持純文字（React 會 escape），不當 markdown 解析
+            <div key={m.id} className="chat-msg me">
+              {m.text}
+            </div>
+          ) : (
+            // agent 答案：內容（帶圖表則交錯 [圖表] 錨點）+ 依本輪工具的分級免責條
+            <div key={m.id} className="chat-turn">
+              {m.charts && m.charts.length > 0 ? (
+                <div className="chat-agent">{renderAgentBody(m.text, m.charts)}</div>
+              ) : (
+                <div className="chat-msg chat-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
+              )}
+              {m.provenance && m.provenance.length > 0 && <Provenance items={m.provenance} />}
+              {m.tools && <Disclaimer tools={m.tools} />}
+            </div>
+          ),
+        )}
 
         <div
           className="chat-msg"
@@ -164,22 +444,51 @@ export function AgentDock() {
                 key={c.id}
                 className="chip maia-chip"
                 data-src={c.source}
-                data-ok={c.ok === true ? '1' : '0'}
+                data-state={c.ok === null ? 'pending' : c.ok ? 'ok' : 'fail'}
                 title={`${toolLabel(c.name)} · _source: ${c.source} · ${c.name}`}
               >
-                {c.ok === null ? '◌ ' : '✓ '}
+                {c.ok === null ? <span className="spinner chip-spin" /> : c.ok ? '✓ ' : '✗ '}
                 {toolLabel(c.name)}
               </span>
             ))}
           </div>
         )}
 
+        {charts.length > 0 && (
+          <div className="viz-list" data-testid="viz-list">
+            {charts.map((c) => {
+              const node = chartSpecFor(c.tool, c.result, c.args);
+              return node ? (
+                <div key={c.id} className="maia-viz" data-src={toolSource(c.tool)}>
+                  {node}
+                </div>
+              ) : null;
+            })}
+          </div>
+        )}
+
+        {readerAlerts.map((a) => (
+          <div key={a.id} className="maia-reader" data-testid="reader-alert">
+            <strong>⚠ 已攔截疑似指令注入</strong>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+              來源：{toolLabel(a.source)}
+              {a.flags.length > 0 ? ` · 命中：${a.flags.join('、')}` : ''}
+            </div>
+          </div>
+        ))}
+
         {approval && (
           <div className="maia-approval" data-testid="approval-card">
             <strong>需要你確認才會執行</strong>
             <div style={{ marginTop: 6 }}>{approval.summary}</div>
-            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
-              計畫雜湊 {approval.hash.slice(0, 12)}… · 完整的核准流程在風控室
+            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>計畫雜湊 {approval.hash.slice(0, 12)}…</div>
+            <div className="maia-approval-btns">
+              <button className="btn btn-primary" onClick={() => void approveOrder()}>
+                核准並執行
+              </button>
+              <button className="btn" onClick={() => void rejectOrder()}>
+                取消
+              </button>
             </div>
           </div>
         )}
@@ -205,6 +514,29 @@ export function AgentDock() {
       )}
 
       <div className="composer maia-composer">
+        {MIC_SUPPORTED && (
+          <button
+            className="maia-mic"
+            data-rec={recording ? '1' : '0'}
+            disabled={busy || sttBusy}
+            onClick={toggleMic}
+            title={recording ? '停止並轉文字' : '語音輸入（點一下開始說，再點一下轉文字）'}
+            aria-label="語音輸入"
+          >
+            {sttBusy ? (
+              <span className="spinner chip-spin" />
+            ) : recording ? (
+              <span className="maia-mic-rec" />
+            ) : (
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
+                <rect x="6" y="1" width="4" height="8" />
+                <path d="M3 8a5 5 0 0 0 10 0" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                <rect x="7" y="12" width="2" height="3" />
+                <rect x="5" y="14" width="6" height="1.5" />
+              </svg>
+            )}
+          </button>
+        )}
         <input
           ref={inputRef}
           type="text"

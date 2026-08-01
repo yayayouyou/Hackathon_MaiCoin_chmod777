@@ -146,6 +146,77 @@
     background: linear-gradient(90deg, #080b1200, #080b12 56px);
   }
 
+  /* ── 公告 / 活動跑馬燈（行情列正下方） ───────────────── */
+  /*
+   * 結構與行情列一模一樣（兩份等寬內容 + translateX(-50%) 無縫捲動），
+   * 只是貼在行情列下方（top 吃 --ticker-h）、底色帶一點 MAX 藍以示區別、
+   * 捲速略慢，兩條 bar 才不會像同一條在動。同樣用 id 選擇器提高權重把
+   * pointer-events 打回 none —— 最上面這兩條都不該吃掉往上走時的點擊。
+   */
+  #hud-root > .ann {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--ticker-h, 28px);
+    height: 30px;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    background: #0a1222f2;
+    border-bottom: 2px solid #0a0c12;
+    box-shadow: inset 0 -2px 0 0 #1f3358;
+    pointer-events: none;
+  }
+  .ann-track {
+    display: flex;
+    width: max-content;
+    animation: ann-scroll 46s linear infinite;
+    will-change: transform;
+  }
+  @keyframes ann-scroll {
+    to { transform: translateX(-50%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ann-track { animation: none; }
+  }
+  .ann-row {
+    display: flex;
+    flex: none;
+    min-width: 100vw;
+    justify-content: space-around;
+  }
+  .ann-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 16px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .ann-tag {
+    color: var(--max);
+    letter-spacing: 1px;
+    font-size: 10px;
+    border: 1px solid #2a3f8f;
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+  .ann-title { color: var(--txt); }
+  .ann-meta { color: var(--green); font-family: var(--mono); font-size: 10px; }
+  .ann-badge {
+    position: absolute;
+    right: 0;
+    top: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding: 0 10px 0 56px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--max);
+    background: linear-gradient(90deg, #0a122200, #0a1222 56px);
+  }
+
   /* ── 角色卡（左下） ─────────────────────────────────── */
   .pod {
     position: fixed;
@@ -297,7 +368,7 @@
     /* 不貼齊 0：inset box-shadow 的右邊那道 2px 光環會剛好落在視窗邊界上被
        抹掉，整顆 tab 看起來像沒載完的破圖。留 2px 讓光環四邊都收得起來。 */
     right: 2px;
-    top: calc(50% + var(--ticker-h, 0px) / 2);
+    top: calc(50% + var(--strips-h, var(--ticker-h, 0px)) / 2);
     transform: translateY(-50%);
     display: flex;
     flex-direction: column;
@@ -325,8 +396,9 @@
   .maia-dock {
     position: fixed;
     right: 0;
-    /* 讓出行情條的高度，否則 dock 的標題列會被壓在它底下 */
-    top: var(--ticker-h, 0px);
+    /* 讓出頂部兩條 strip（行情 + 公告活動）的高度，否則 dock 的標題列會被壓在
+       它底下。--strips-h 由 AnnounceStrip 寫入；沒有它時退回只讓行情列。 */
+    top: var(--strips-h, var(--ticker-h, 0px));
     bottom: 0;
     display: flex;
     flex-direction: column;
@@ -335,6 +407,18 @@
     box-shadow: inset 2px 0 0 0 var(--max);
     border-radius: 0;
   }
+
+  /* 左緣拖曳把手：調整 dock 寬度 */
+  .maia-dock-resize {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: ew-resize;
+    z-index: 6;
+  }
+  .maia-dock-resize:hover { box-shadow: inset 3px 0 0 var(--max); }
 
   .maia-dock-head {
     display: flex;
@@ -359,6 +443,83 @@
     white-space: nowrap;
   }
   .maia-elapsed { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  /* header 的模型下拉：直角硬邊，跟晶片同一套像素語彙 */
+  .maia-model {
+    flex: none;
+    max-width: 96px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    background: #10192b;
+    border: 1px solid #1e2635;
+    border-radius: 0;
+    padding: 2px 4px;
+    cursor: pointer;
+  }
+  .maia-model:hover:not(:disabled) { color: var(--txt); border-color: var(--max); }
+  .maia-model:disabled { opacity: 0.5; cursor: default; }
+
+  /* header 的「歷史」開關 */
+  .maia-hist {
+    flex: none;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    background: #10192b;
+    border: 1px solid #1e2635;
+    border-radius: 0;
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+  .maia-hist:hover { color: var(--txt); border-color: var(--max); }
+  .maia-hist[data-open='1'] { color: var(--max); border-color: var(--max); }
+
+  /* 歷史對話抽屜：覆蓋整個 dock（含 inset:0），有自己的頭部與清單 */
+  .maia-history {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    background: #0b0f18;
+  }
+  .maia-history-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #1e2635;
+  }
+  .maia-history-head .btn { flex: 1; font-size: 12px; }
+  .maia-history-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .maia-history-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    text-align: left;
+    color: var(--txt);
+    background: var(--panel-2);
+    border: 1px solid #1e2635;
+    border-radius: 0;
+    cursor: pointer;
+  }
+  .maia-history-item:hover { border-color: var(--max); }
+  .maia-history-title {
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .maia-history-meta { font-family: var(--mono); font-size: 10px; color: var(--dim); }
   .maia-dot {
     width: 8px;
     height: 8px;
@@ -394,12 +555,49 @@
   .maia-suggest { padding: 0 12px 8px; margin-top: 0; }
   .maia-composer { padding: 10px 12px; border-top: 1px solid #1e2635; margin-top: 0; }
 
+  /* 語音輸入麥克風鈕（composer 內，input 左側）。錄音中轉紅並閃爍。 */
+  .maia-mic {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    color: var(--dim);
+    background: #10192b;
+    border: 1px solid #1e2635;
+    border-radius: 0;
+    cursor: pointer;
+  }
+  .maia-mic:hover:not(:disabled) { color: var(--txt); border-color: var(--max); }
+  .maia-mic:disabled { opacity: 0.5; cursor: default; }
+  .maia-mic[data-rec='1'] { color: var(--rose); border-color: var(--rose); }
+  .maia-mic-rec {
+    width: 10px;
+    height: 10px;
+    background: var(--rose);
+    animation: maia-blink 1s steps(2, end) infinite;
+  }
+
   /* 工具晶片依資料來源上色 —— 顏色就是 grounding 的圖例 */
   .maia-chip[data-src='dna']    { border-color: var(--violet); color: var(--violet); }
   .maia-chip[data-src='max']    { border-color: var(--max); color: var(--max); }
   .maia-chip[data-src='market'] { border-color: var(--cyan); color: var(--cyan); }
   .maia-chip[data-src='news']   { border-color: var(--amber); color: var(--amber); }
-  .maia-chip[data-ok='0']       { opacity: 0.55; }
+  /* 狀態疊在來源色之上（同特異度靠順序在後者勝出）：進行中變淡、失敗轉紅 */
+  .maia-chip[data-state='pending'] { opacity: 0.6; }
+  .maia-chip[data-state='fail'] {
+    border-color: var(--rose);
+    color: var(--rose);
+    opacity: 1;
+  }
+  /* 晶片內的小轉圈（沿用 .spinner，只縮小尺寸） */
+  .chip-spin {
+    width: 9px;
+    height: 9px;
+    border-width: 1.5px;
+    margin-right: 4px;
+    vertical-align: -1px;
+  }
 
   .maia-approval {
     padding: 10px;
@@ -408,6 +606,151 @@
     border: 2px solid #0a0c12;
     box-shadow: inset 0 0 0 1px var(--amber);
   }
+
+  .maia-approval-btns { display: flex; gap: 6px; margin-top: 8px; }
+  .maia-approval-btns .btn { flex: 1; font-size: 12px; }
+
+  /* 依據列（provenance）：可展開，逐筆來源色編碼 + 關鍵數值 */
+  .maia-prov-head {
+    font-family: var(--mono); font-size: 10px; color: var(--dim);
+    background: none; border: 0; padding: 2px 0; cursor: pointer;
+  }
+  .maia-prov-head:hover { color: var(--txt); }
+  .maia-prov-body { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; }
+  .maia-prov-item {
+    display: flex; flex-direction: column; gap: 1px;
+    padding: 3px 8px; font-size: 10px;
+    background: #0d1420; border-left: 2px solid var(--line);
+  }
+  .maia-prov-item[data-src='max']    { border-left-color: var(--max); }
+  .maia-prov-item[data-src='dna']    { border-left-color: var(--violet); }
+  .maia-prov-item[data-src='market'] { border-left-color: var(--cyan); }
+  .maia-prov-item[data-src='news']   { border-left-color: var(--amber); }
+  .maia-prov-tool { color: var(--txt); font-weight: 600; }
+  .maia-prov-detail { color: var(--dim); font-family: var(--mono); }
+
+  /* reader 注入攔截警示：rose 色調，跟核准卡（琥珀）區隔開來 */
+  .maia-reader {
+    padding: 10px;
+    font-size: 12px;
+    background: #1c0d12;
+    border: 2px solid #0a0c12;
+    box-shadow: inset 0 0 0 1px var(--rose);
+  }
+  .maia-reader strong { color: var(--rose); }
+
+  /* ── 圖表卡（ui/vizCards）：直角硬邊、左邊框依資料來源上色 ───── */
+  .viz-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .maia-viz {
+    padding: 8px 10px;
+    background: #0b0f18;
+    border: 1px solid #1e2635;
+    border-radius: 0;
+  }
+  .maia-viz[data-src='max']    { box-shadow: inset 2px 0 0 var(--max); }
+  .maia-viz[data-src='dna']    { box-shadow: inset 2px 0 0 var(--violet); }
+  .maia-viz[data-src='market'] { box-shadow: inset 2px 0 0 var(--cyan); }
+  .maia-viz[data-src='news']   { box-shadow: inset 2px 0 0 var(--amber); }
+
+  .viz-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; }
+  .viz-eyebrow {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 1px;
+    color: var(--dim); text-transform: uppercase;
+  }
+  .viz-title {
+    flex: 1; font-size: 12px; font-weight: 600; color: var(--txt);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .viz-tag { font-family: var(--mono); font-size: 9px; color: var(--dim); }
+  .viz-empty { font-size: 11px; color: var(--dim); padding: 4px 0; }
+
+  /* 恐懼貪婪半圓儀表 */
+  .viz-gauge { display: flex; flex-direction: column; align-items: center; }
+  .viz-gauge-svg { width: 100%; max-width: 220px; height: auto; }
+  .viz-gauge-num { font-family: var(--mono); font-size: 30px; font-weight: 700; }
+  .viz-gauge-label { font-size: 12px; font-weight: 600; margin-top: -4px; }
+  .viz-legend { display: flex; flex-wrap: wrap; gap: 4px 8px; justify-content: center; margin-top: 6px; }
+  .viz-legend-item {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 9px; color: var(--dim); opacity: 0.55;
+  }
+  .viz-legend-item[data-on='1'] { opacity: 1; color: var(--txt); }
+  .viz-swatch { width: 8px; height: 8px; display: inline-block; }
+
+  /* 訂單簿深度條 */
+  .viz-ob { display: flex; flex-direction: column; gap: 1px; }
+  .viz-ob-row {
+    position: relative; display: flex; justify-content: space-between; align-items: center;
+    padding: 2px 4px; font-family: var(--mono); font-size: 11px;
+  }
+  .viz-ob-bar { position: absolute; right: 0; top: 0; bottom: 0; z-index: 0; }
+  .viz-ob-row.ask .viz-ob-bar { background: var(--rose); opacity: 0.18; }
+  .viz-ob-row.bid .viz-ob-bar { background: var(--green); opacity: 0.18; }
+  .viz-ob-price { position: relative; z-index: 1; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .viz-ob-row.ask .viz-ob-price { color: var(--rose); }
+  .viz-ob-row.bid .viz-ob-price { color: var(--green); }
+  .viz-ob-vol { position: relative; z-index: 1; color: var(--dim); }
+  .viz-ob-spread {
+    display: flex; justify-content: space-between; padding: 3px 4px; margin: 1px 0;
+    border-top: 1px dashed #1e2635; border-bottom: 1px dashed #1e2635;
+    font-family: var(--mono); font-size: 10px; color: var(--dim);
+  }
+
+  /* C. 資產配置堆疊條 */
+  .viz-acct-note { font-size: 9px; color: var(--dim); margin-bottom: 4px; }
+  .viz-acct-bar { display: flex; height: 20px; border: 1px solid #1e2635; overflow: hidden; }
+  .viz-acct-seg { height: 100%; }
+  .viz-acct-legend { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+  .viz-acct-row { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; }
+  .viz-acct-cur { color: var(--txt); min-width: 42px; }
+  .viz-acct-amt { flex: 1; color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
+  .viz-acct-share { color: var(--txt); min-width: 42px; text-align: right; }
+
+  /* D. 交易 DNA 六軸雷達 */
+  .viz-radar { display: flex; flex-direction: column; align-items: center; }
+  .viz-radar-head { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-bottom: 2px; }
+  .viz-arche {
+    font-size: 12px; font-weight: 600; color: var(--violet);
+    border: 1px solid var(--violet); padding: 1px 6px;
+  }
+  .viz-tagchip { font-size: 9px; color: var(--dim); border: 1px solid #1e2635; padding: 1px 5px; }
+  .viz-warn { font-size: 11px; color: var(--rose); }
+  .viz-radar-svg { width: 100%; max-width: 220px; height: auto; }
+  .viz-radar-axis { fill: var(--dim); font-size: 9px; font-family: var(--font); }
+
+  /* E. 交易行為四維卡 */
+  .viz-beh { display: flex; flex-direction: column; gap: 8px; }
+  .viz-beh-head { display: flex; align-items: center; gap: 6px; }
+  .viz-badge { font-size: 9px; padding: 1px 5px; border: 1px solid var(--line); color: var(--dim); }
+  .viz-badge.warn { color: var(--amber); border-color: var(--amber); }
+  .viz-beh-sample { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+  .viz-beh-row { display: flex; flex-direction: column; gap: 4px; }
+  .viz-beh-row[data-ok='0'] { opacity: 0.5; }
+  .viz-beh-title { font-size: 12px; font-weight: 600; color: var(--txt); }
+  .viz-beh-thin { font-weight: 400; color: var(--dim); font-size: 10px; }
+  .viz-beh-note { font-size: 11px; color: var(--dim); }
+  .viz-tiles { display: flex; flex-wrap: wrap; gap: 4px; }
+  .viz-tile {
+    display: flex; flex-direction: column; gap: 1px; padding: 4px 8px;
+    background: #0d1420; border: 1px solid #1e2635; min-width: 66px;
+  }
+  .viz-tile-v { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--txt); font-variant-numeric: tabular-nums; }
+  .viz-tile-l { font-size: 9px; color: var(--dim); }
+  .viz-tile[data-tone='up'] .viz-tile-v { color: var(--green); }
+  .viz-tile[data-tone='down'] .viz-tile-v { color: var(--rose); }
+  .viz-tile[data-tone='warn'] .viz-tile-v { color: var(--amber); }
+  .viz-beh-avg { display: flex; flex-direction: column; gap: 3px; }
+  .viz-dist { display: flex; height: 14px; border: 1px solid #1e2635; overflow: hidden; }
+  .viz-dist-seg.below { background: var(--green); opacity: 0.6; }
+  .viz-dist-seg.above { background: var(--rose); opacity: 0.6; }
+  .viz-beh-legend { display: flex; justify-content: space-between; font-size: 10px; }
+  .viz-beh-legend .up { color: var(--green); }
+  .viz-beh-legend .down { color: var(--rose); }
+
+  /* F. K 線蠟燭圖 */
+  .viz-kline-svg { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
+  .viz-kline-axis { fill: var(--dim); font-family: var(--mono); font-size: 8px; }
+  .viz-kline-last { font-family: var(--mono); font-size: 9px; font-weight: 700; }
 
   /* 直立手機：dock 改成整片蓋上來，功能條讓出高度給它 */
   @media (max-width: 560px) {

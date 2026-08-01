@@ -18,7 +18,7 @@ from typing import Optional, Dict, Any, List
 from loguru import logger
 from dotenv import load_dotenv
 
-from skills.execution.risk_guard import validate_order
+from skills.execution.risk_guard import validate_order, is_limit_like
 from skills.execution import live_guard
 from skills.max_exchange.max_public import get_max_tickers
 from skills.max_exchange.max_private import (
@@ -131,14 +131,59 @@ def _simulate_fill(
     模擬盤 (paper) 撮合：不呼叫真實 MAX API，以最新價/委託價成交並套用手續費。
     回傳與實盤相同的 {"status": "SUCCESS", "order": {...}} 結構，讓下游程式對模式無感。
     """
-    fill_price = price if (ord_type.lower() == "limit" and price is not None) else latest_price
+    ord_type_lower = ord_type.lower()
+    fill_price = price if (is_limit_like(ord_type_lower) and price is not None) else latest_price
+    market_id = market.replace("/", "").replace("_", "").lower()
+    side_lower = side.lower()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # ── post_only 的模擬必須忠實，否則模擬盤會給出誤導的結果 ──
+    #
+    # post_only 的全部意義就是「不要立刻成交」。如果模擬盤照樣回「已成交」，
+    # 使用者在 paper 測試時會以為單子成交了 —— 而實盤的同一筆要嘛掛在簿上等、
+    # 要嘛被交易所整筆拒絕。那是最糟的一種模擬：讓人對真實行為建立錯誤的預期。
+    #
+    # 用 latest_price 當最佳買/賣價的近似（模擬盤不查訂單簿）。真實判定以
+    # 對手方掛單為準，所以邊界附近的結果可能與實盤不同 —— 但方向是對的。
+    if ord_type_lower == "post_only":
+        crosses = (side_lower == "buy" and fill_price >= latest_price) or \
+                  (side_lower == "sell" and fill_price <= latest_price)
+        if crosses:
+            logger.info(f"[PAPER] post_only 會立即成交 → 模擬交易所拒單：{side_lower} {volume} @ {fill_price}")
+            return {
+                "status": "REJECTED_POST_ONLY",
+                "mode": "paper",
+                "reason": (f"只掛單（post_only）遭拒：委託價 {fill_price} 會與市價 {latest_price} "
+                           f"立即成交。買單要低於市價、賣單要高於市價才掛得上去。"),
+                "order": {"market": market_id, "side": side_lower, "ord_type": ord_type_lower,
+                          "volume": volume, "price": fill_price, "state": "cancel",
+                          "simulated": True, "created_at": now},
+            }
+        # 掛得上去：狀態是「等待成交」，不是「已成交」。手續費要等真的成交才發生。
+        logger.info(f"[PAPER] 模擬掛單（post_only，未成交）：{side_lower} {volume} @ {fill_price} ({market_id})")
+        return {
+            "status": "SUCCESS",
+            "mode": "paper",
+            "order": {
+                "id": f"paper-{uuid.uuid4().hex[:12]}",
+                "market": market_id, "side": side_lower, "ord_type": ord_type_lower,
+                "volume": volume, "executed_volume": 0, "remaining_volume": volume,
+                "price": fill_price, "avg_price": None,
+                "notional": volume * fill_price, "fee": 0,
+                "state": "wait", "simulated": True, "created_at": now,
+            },
+        }
+
+    # limit / market 維持原本的「立刻全額成交」模擬。
+    # （limit 其實也可能掛著不成交，但那是既有行為，agent 那側的既有測試依賴它，
+    #   不在這一批改動的範圍內。post_only 是新型別，所以從一開始就做對。）
     notional = volume * fill_price
     fee = notional * PAPER_FEE_RATE
     order = {
         "id": f"paper-{uuid.uuid4().hex[:12]}",
-        "market": market.replace("/", "").replace("_", "").lower(),
-        "side": side.lower(),
-        "ord_type": ord_type.lower(),
+        "market": market_id,
+        "side": side_lower,
+        "ord_type": ord_type_lower,
         "volume": volume,
         "executed_volume": volume,
         "price": fill_price,
@@ -147,9 +192,9 @@ def _simulate_fill(
         "fee": fee,
         "state": "done",
         "simulated": True,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now,
     }
-    logger.info(f"[PAPER] 模擬成交：{side} {volume} @ {fill_price} ({market})，手續費 {fee:.4f}")
+    logger.info(f"[PAPER] 模擬成交：{side_lower} {volume} @ {fill_price} ({market_id})，手續費 {fee:.4f}")
     return {"status": "SUCCESS", "mode": "paper", "order": order}
 
 
@@ -174,8 +219,13 @@ def create_order(
         exchange_id: 交易所 ID，目前僅支持現貨交易 'max'
         side: 交易方向，'buy' (買入) 或 'sell' (賣出)
         volume: 下單數量
-        price: 限價單委託價格。市價單時不需填寫。
-        ord_type: 委託類型，'limit' (限價單) 或 'market' (市價單)
+        price: 限價型委託價格（limit / post_only）。市價單時不需填寫。
+        ord_type: 委託類型：
+          - 'limit'      限價單
+          - 'market'     市價單（立即成交）
+          - 'post_only'  只掛單／maker-only：**送出當下就會成交的話，交易所直接
+                         拒絕整筆單**。要「掛著等，不要立刻成交」時用它，比自己
+                         把限價設遠一點可靠 —— 後者在行情跳動時仍可能被吃掉。
     """
     ex_id_lower = exchange_id.lower()
     if ex_id_lower != "max":
@@ -184,8 +234,8 @@ def create_order(
     side_lower = side.lower()
     ord_type_lower = ord_type.lower()
 
-    if ord_type_lower == "limit" and price is None:
-        return {"error": "下單失敗。限價單 (limit) 必須提供委託價格 (price)。"}
+    if is_limit_like(ord_type_lower) and price is None:
+        return {"error": f"下單失敗。{ord_type_lower} 必須提供委託價格 (price)。"}
 
     # 1~2. 查詢報價 + 硬編碼物理風控鎖校驗（已修正 ticker shape）
     prep = prepare_and_validate_order(market, side_lower, volume, price, ord_type_lower)

@@ -51,8 +51,19 @@ def step_sdk() -> bool:
         return False
     say(INFO, f"boto3 {boto3.__version__} / botocore {botocore.__version__}")
 
-    # 不需要憑證就能檢查方法是否存在（client 建立本身不打網路）
-    c = boto3.client("bedrock-runtime", region_name="us-west-2")
+    # 不需要憑證就能檢查方法是否存在（client 建立本身不打網路）。但若 .env 設了
+    # AWS_PROFILE 指向一個還沒建立的 profile，boto3 在「建 client」這一步就會丟
+    # ProfileNotFound —— 比 step_identity 更早，會蓋掉那邊的友善提示變成 traceback。
+    # 這正是組員「設了 profile 但還沒匯入憑證」的常態，這裡先擋下來講白。
+    from botocore.exceptions import ProfileNotFound
+    try:
+        c = boto3.client("bedrock-runtime", region_name="us-west-2")
+    except ProfileNotFound:
+        prof = os.getenv("AWS_PROFILE")
+        say(FAIL, f"設了 AWS_PROFILE={prof} 但 ~/.aws 裡沒有這個 profile。"
+                  f"先跑 `.\\scripts\\aws_creds_import.ps1`（貼上黑客松臨時憑證）建立它，"
+                  f"或把 .env 的 AWS_PROFILE 註解掉改走環境變數 / IAM Role。")
+        return False
     missing = [m for m in ("converse", "converse_stream") if not hasattr(c, m)]
     if missing:
         say(FAIL, f"botocore 太舊，bedrock-runtime 缺少 {missing}。"

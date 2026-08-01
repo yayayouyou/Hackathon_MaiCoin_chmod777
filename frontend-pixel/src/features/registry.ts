@@ -129,14 +129,50 @@ export const FEATURES: Feature[] = [
     hint: '問它任何事,它會自己去查',
     keys: 'agent chat 對話 ai maia 助理 問',
     group: 'analysis',
-    // MAIA 在世界裡是紫的，不是 MAX 藍 —— 它是我們自己的 agent，
-    // 不是交易所的一個櫃檯。大廳裡它離 MAX 官方區 160px 遠、光池是全場
-    // 唯一的紫色，這一格的顏色跟著世界走才不會互相矛盾。
-    accent: 'violet',
+    // MAIA 用藍色 robot（accent:'max'），與東翼 MAX 官方區同色系；但它仍在
+    // 中庭、不進 MAX 藍 zone —— 造型統一藍、空間上維持「MAIA 不是交易所櫃檯」。
+    accent: 'max',
     glyph: 'AI',
     panel: 'agentChat',
-    // frontOf(376,214,64,80) = (368,268,80,60)，站位在 (408,324)
-    place: { zone: 'lobby', wx: 408, wy: 320 },
+    // robot(396,254)：frontOf(396,254,24,34)=(388,262,40,60)，站位落在框內
+    place: { zone: 'lobby', wx: 408, wy: 300 },
+  },
+  // ── 我的帳戶（大廳東翼南側三站，藍上綠下；place 對齊 rooms.ts 新 frontOf 中心）──
+  {
+    id: 'holdings',
+    label: '我的金庫',
+    hint: '持倉艙位 · FIFO 成本 · 錢包餘額',
+    keys: 'holdings 持倉 艙位 餘額 資產 position balance wallet vault',
+    group: 'account',
+    accent: 'green',
+    glyph: 'HD',
+    panel: 'holdings',
+    // vault(560,392)：frontOf=(552,422,72,60)
+    place: { zone: 'lobby', wx: 588, wy: 450 },
+  },
+  {
+    id: 'behavior',
+    label: '交易性格',
+    hint: '行為偏誤 · 風控防線 · AI 記住的偏好',
+    keys: 'behavior 性格 行為 偏誤 風控 guard bias 偏好 traits',
+    group: 'analysis',
+    accent: 'green',
+    glyph: 'BH',
+    panel: 'behavior',
+    // hologram(636,396)：frontOf=(628,410,56,60)
+    place: { zone: 'lobby', wx: 656, wy: 440 },
+  },
+  {
+    id: 'pnlDesk',
+    label: '損益對帳',
+    hint: '已實現損益 · 對帳差異 · 資金流',
+    keys: 'pnl 損益 對帳 資金流 reconcile realized funds 出入金',
+    group: 'account',
+    accent: 'green',
+    glyph: 'PL',
+    panel: 'pnlDesk',
+    // board(704,392)：frontOf=(696,414,72,60)
+    place: { zone: 'lobby', wx: 732, wy: 444 },
   },
   // …隊友各自往下加一筆
 ];

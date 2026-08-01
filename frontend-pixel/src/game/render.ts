@@ -279,6 +279,25 @@ function drawFloor(ctx: CanvasRenderingContext2D, room: Room, cam: Camera) {
     ctx.restore();
   }
 
+  // 功能分區的背景色塊：鋪在地板上、徽章與道具之下。世界座標（ctx 已被相機平移）。
+  if (room.zones) {
+    ctx.save();
+    for (const z of room.zones) {
+      ctx.fillStyle = z.tint;
+      ctx.fillRect(z.rect.x, z.rect.y, z.rect.w, z.rect.h);
+      if (z.border) {
+        ctx.globalAlpha = 0.55;
+        ctx.fillStyle = z.border;
+        ctx.fillRect(z.rect.x, z.rect.y, z.rect.w, 2); // 上
+        ctx.fillRect(z.rect.x, z.rect.y + z.rect.h - 2, z.rect.w, 2); // 下
+        ctx.fillRect(z.rect.x, z.rect.y, 2, z.rect.h); // 左
+        ctx.fillRect(z.rect.x + z.rect.w - 2, z.rect.y, 2, z.rect.h); // 右
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.restore();
+  }
+
   if (room.emblems) for (const e of room.emblems) drawEmblem(ctx, e);
 }
 

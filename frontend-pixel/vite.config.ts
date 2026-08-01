@@ -27,6 +27,22 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+      /**
+       * 行情的備援路徑（`hud/feeds.ts` 的第二層），**只在 dev 存在**。
+       *
+       * MAX 的公開 REST 回應沒有 `Access-Control-Allow-Origin`，所以瀏覽器
+       * 直接 fetch 它一定被擋 —— 那正是行情條曾經整排顯示「—」的原因。
+       * CORS 是瀏覽器的規則，proxy 是 server 對 server，不適用，所以繞這裡走得通。
+       *
+       * 它不是主路徑：主路徑是同源的 `/api/tickers`（agent-core 轉發 + 10 秒快取）。
+       * 這條只是讓「只跑前端、沒開 agent-core」的人也看得到真行情，
+       * 因此正式環境刻意不提供對應 behavior，feeds 也只在 localhost 才會試它。
+       */
+      '/maxapi': {
+        target: 'https://max-api.maicoin.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/maxapi/, ''),
+      },
     },
   },
   build: {

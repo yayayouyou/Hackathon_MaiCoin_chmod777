@@ -9,6 +9,9 @@ import { Strategies } from './Strategies';
 import { TradePanel } from './TradePanel';
 import { MaxSupport } from './MaxSupport';
 import { ThreadsAdmin } from './ThreadsAdmin';
+import { Holdings } from './Holdings';
+import { PnlDesk } from './PnlDesk';
+import { Behavior } from './Behavior';
 
 /**
  * ★ 全隊 append 點 2/4。
@@ -30,6 +33,10 @@ export const PANELS = {
   trade: definePanel({ id: 'trade', title: 'MAX 現貨交易', Component: TradePanel }),
   maxSupport: definePanel({ id: 'maxSupport', title: 'MAX 官方客服', Component: MaxSupport }),
   threadsAdmin: definePanel({ id: 'threadsAdmin', title: 'MAIA 官方社群管理', Component: ThreadsAdmin }),
+  // ── 大廳右下角「我的帳戶」三站（資料一律走 MAX API，見 api/account.ts）──
+  holdings: definePanel({ id: 'holdings', title: '我的金庫', Component: Holdings }),
+  pnlDesk: definePanel({ id: 'pnlDesk', title: '損益對帳台', Component: PnlDesk }),
+  behavior: definePanel({ id: 'behavior', title: '交易性格', Component: Behavior }),
 } as const satisfies Record<string, PanelDef>;
 
 export type PanelId = keyof typeof PANELS;

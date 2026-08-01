@@ -1,245 +1,431 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getBalances, getCostBasis, getMarkets, placeOrder, QUOTES_WITH_LIVE_DATA } from '../../api';
-import type { Balance, Market, Quote } from '../../api/types';
+import { getDashboard, type Balance } from '../../api/account';
+import {
+  getMarketRows, previewOrder,
+  type MarketRow, type OrderPreview, type OrdType,
+} from '../../api/trade';
+import { approveOrder, rejectOrder } from '../../api/agent';
 import { useAsync } from '../useAsync';
-import { DemoData } from '../DemoData';
-import { connect, disconnect, useUI } from '../uiStore';
+import { AsyncState } from '../Panel';
+import { PriceChart } from './PriceChart';
+import { OrderBook } from './OrderBook';
 
-const QUOTES: Quote[] = ['TWD', 'USDT', 'BTC'];
-/** MAX 現貨費率：掛單 0.045%、吃單 0.15%（未計 MAX Token 折扣） */
-const FEE = { limit: 0.00045, market: 0.0015 };
+/**
+ * 現貨交易。CharPanel 的「交易」分頁，不是獨立面板。
+ *
+ * ⚠ **下單是兩步的，而且第二步才會真的送出。**
+ *
+ *     表單 → previewOrder() → 後端凍結計畫 + token → 確認框 → approveOrder()
+ *
+ *   確認框裡的每一個數字都來自**後端凍結的計畫**，不是畫面上的表單值。這不是
+ *   多此一舉：確認框開著的時候表單還可能被改（誤觸百分比鈕、行情把價格帶動），
+ *   而使用者按下確認時同意的必須就是實際送出的那一筆。模式（模擬／實盤）
+ *   也在 preview 當下凍住 —— 否則「在模擬盤按下核准、送出前 .env 被改成 live」
+ *   就會變成真單。這條互鎖與 MAIA 對話下單走的是同一支後端。
+ *
+ * ⚠ 這個面板**沒有**任何直接下單的路徑。取消時會呼叫 rejectOrder() 把 token
+ *   作廢，不是只把畫面關掉 —— 留著一個活的 pending token 等於留了一把鑰匙。
+ *
+ * 金鑰不在瀏覽器。規格 §「金鑰輸入框放在 boot」那條已經否決過在前端收金鑰：
+ * HMAC 簽章在伺服器端，前端只顯示「後端有沒有綁到帳戶」。
+ */
 
-function fmt(n: number, quote: Quote): string {
-  if (quote === 'BTC') return n.toFixed(6);
-  if (n >= 1000) return n.toLocaleString('zh-TW', { maximumFractionDigits: 0 });
-  if (n >= 1) return n.toFixed(2);
-  return n.toPrecision(4);
+const QUOTES = ['twd', 'usdt', 'btc'] as const;
+type QuoteId = (typeof QUOTES)[number];
+
+/**
+ * MAX 的現貨費率。只用來預估，實際以成交回報為準。
+ *
+ * post_only 保證是 maker，所以它吃的一定是 maker 費率 —— 這是「只掛單」除了
+ * 不會立刻成交之外的第二個好處，費率是市價單的一半。
+ */
+const FEE: Record<OrdType, number> = { limit: 0.0008, market: 0.0016, post_only: 0.0008 };
+
+const ORD_TYPES: Array<{ id: OrdType; label: string; hint: string }> = [
+  { id: 'limit', label: '限價', hint: '指定價格，可能立刻成交也可能掛著等' },
+  { id: 'post_only', label: '只掛單', hint: '保證不會立刻成交：會成交的話交易所整筆拒絕（maker 費率）' },
+  { id: 'market', label: '市價', hint: '立刻以市價成交' },
+];
+
+/** 美元計價的穩定幣。使用者下單前最常確認的就是「台幣還有多少、U 還有多少」。 */
+const USD_LIKE = new Set(['USDT', 'USDC', 'USDX']);
+
+function money(n: number, digits = 2): string {
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('en-US', { maximumFractionDigits: digits });
 }
 
-const twd = (n: number) => n.toLocaleString('zh-TW', { maximumFractionDigits: 0 });
-
-/** 拿不到的數字一律顯示破折號，不要拿 0 冒充。 */
-const orDash = (n: number | null, render: (v: number) => string) => (n === null ? '—' : render(n));
-
-/** 小數位數隨數量級調整：均價 1.62 不該被四捨五入成 2。 */
-function money(n: number): string {
-  const abs = Math.abs(n);
-  const d = abs >= 1000 ? 0 : abs >= 10 ? 2 : abs >= 1 ? 3 : 6;
-  return n.toLocaleString('zh-TW', { maximumFractionDigits: d });
+/** 依交易對的精度截位。多送小數位 MAX 會直接退件。 */
+function trim(n: number, precision?: number | null): string {
+  const p = typeof precision === 'number' && precision >= 0 ? Math.min(precision, 8) : 8;
+  return String(Number(n.toFixed(p)));
 }
 
-/** 限價單帶入的價格取到該價位合理的最小跳動單位，不要出現一長串小數。 */
-function tickPrice(p: number): string {
-  return p.toFixed(p >= 10000 ? 0 : p >= 100 ? 1 : p >= 1 ? 2 : 6);
+/** 只掛單的預設讓價幅度。夠遠到不會被行情跳動吃掉，又夠近到還排得上隊伍前面。 */
+const POST_ONLY_OFFSET = 0.001;
+
+/**
+ * 表單的預設委託價。
+ *
+ * 只掛單必須落在**被動側**（買在市價之下、賣在市價之上），否則交易所整筆拒絕。
+ * 預設直接帶市價的話，一選「只掛單」按鈕就是灰的 —— 一個預設就無法送出的
+ * 表單會讓人以為壞了，而不是以為自己要改價。
+ */
+function seedPrice(type: OrdType, side: 'buy' | 'sell', m: MarketRow): string {
+  if (type !== 'post_only') return trim(m.last, m.quote_precision);
+  const k = side === 'buy' ? 1 - POST_ONLY_OFFSET : 1 + POST_ONLY_OFFSET;
+  return trim(m.last * k, m.quote_precision);
 }
+
+const RIGHT_TABS = [
+  { id: 'chart', label: '價格圖' },
+  { id: 'book', label: '訂單簿' },
+  { id: 'balance', label: '餘額' },
+] as const;
+type RightTab = (typeof RIGHT_TABS)[number]['id'];
 
 export function Trade() {
-  const { connected } = useUI();
-  const [quote, setQuote] = useState<Quote>('TWD');
+  const [quote, setQuote] = useState<QuoteId>('twd');
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState<string | null>(null);
+  const [rightTab, setRightTab] = useState<RightTab>('chart');
+  /**
+   * 從訂單簿點來的價格。帶一個 nonce 是因為連點同一檔價格時 price 值不變，
+   * 少了它第二次點擊就不會有反應（使用者會以為壞了）。
+   */
+  const [pickedPrice, setPickedPrice] = useState<{ price: number; n: number } | null>(null);
 
   /**
-   * 行情每 3 秒輪詢一次。useAsync 在定時重抓時不會翻 loading、也不清舊資料，
-   * 加上 React 靠 key 保留 DOM 節點，所以列表捲動位置與輸入焦點都不會被打斷。
+   * 市場每 5 秒重抓（後端有 60 秒快取，所以實際打 MAX 的頻率遠低於此）。
+   * useAsync 定時重抓時不翻 loading、不清舊資料，所以捲動位置與輸入焦點不會斷。
    */
-  const mkts = useAsync(() => getMarkets(quote), [quote], { intervalMs: 3000 });
-  const bal = useAsync(
-    () => (connected ? getBalances() : Promise.resolve<Balance[]>([])),
-    [connected],
-  );
+  const mkts = useAsync((s) => getMarketRows(quote, s), [quote], { intervalMs: 5000 });
+  const dash = useAsync((s) => getDashboard(s), []);
 
   const list = useMemo(() => {
     const kw = q.trim().toLowerCase();
-    return (mkts.data ?? []).filter(
-      (m) => !kw || m.base.toLowerCase().includes(kw) || m.name.toLowerCase().includes(kw),
-    );
+    return (mkts.data ?? []).filter((m) => !kw || m.base.toLowerCase().includes(kw));
   }, [mkts.data, q]);
 
   const sel = list.find((m) => m.id === picked) ?? list[0] ?? null;
+  const balances = dash.data?.balances ?? [];
+  const hasAccount = dash.data?.has_account === true;
 
   return (
     <div className="trade">
-      <MarketList
-        quote={quote}
-        onQuote={(nq) => {
-          setQuote(nq);
-          setPicked(null);
-        }}
-        q={q}
-        onQ={setQ}
-        list={list}
-        loading={mkts.loading}
-        error={mkts.error}
-        selId={sel?.id ?? null}
-        onPick={setPicked}
-      />
+      <div className="col">
+        <h3>交易對</h3>
+        <div className="tabs" style={{ marginBottom: 8 }}>
+          {QUOTES.map((qt) => (
+            <button
+              key={qt}
+              aria-selected={quote === qt}
+              onClick={() => {
+                setQuote(qt);
+                setPicked(null);
+              }}
+            >
+              {qt.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          placeholder="搜尋幣種…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          style={{ marginBottom: 8 }}
+        />
+        <AsyncState loading={mkts.loading} error={mkts.error} onRetry={mkts.reload} />
+        <div className="mkt-list">
+          {list.map((m) => (
+            <div
+              key={m.id}
+              className="mkt-row"
+              role="button"
+              tabIndex={0}
+              aria-selected={m.id === sel?.id}
+              onClick={() => setPicked(m.id)}
+              onKeyDown={(e) => e.key === 'Enter' && setPicked(m.id)}
+            >
+              <span>
+                <span className="sym">{m.base}</span>
+                <span className="sub">/{m.quote.toUpperCase()}</span>
+              </span>
+              <span className="num">{money(m.last, m.last >= 1000 ? 0 : 4)}</span>
+              <span className={`chg num ${m.pct >= 0 ? 'up' : 'down'}`}>
+                {m.pct >= 0 ? '+' : ''}
+                {m.pct.toFixed(2)}%
+              </span>
+            </div>
+          ))}
+          {!mkts.loading && list.length === 0 && <div className="empty">沒有符合的交易對</div>}
+        </div>
+      </div>
 
       <div className="col">
         <h3>下單</h3>
-        {connected ? (
-          sel ? (
-            <OrderForm market={sel} balances={bal.data ?? []} onDone={bal.reload} />
-          ) : (
-            <div className="empty">請先選擇交易對</div>
-          )
+        {dash.loading ? (
+          <AsyncState loading error={null} />
+        ) : !hasAccount ? (
+          <AccountGate detail={dash.data?.account_error} />
+        ) : sel ? (
+          <OrderForm market={sel} balances={balances} onDone={dash.reload} pickedPrice={pickedPrice} />
         ) : (
-          <CredsForm />
+          <div className="empty">請先選擇交易對</div>
         )}
       </div>
 
+      {/*
+        第三欄是最寬的（1fr），給圖表用。餘額收進分頁不會讓「下單前快速確認」
+        失效 —— 下單表單正上方一直有一行「可用 XXX」，那才是實際會看的位置。
+      */}
       <div className="col">
-        <h3>當前持倉</h3>
-        {connected ? <Positions state={bal} /> : <Locked />}
-      </div>
-    </div>
-  );
-}
-
-// ── 左欄：行情 ──────────────────────────────────────────────
-
-function MarketList({
-  quote,
-  onQuote,
-  q,
-  onQ,
-  list,
-  loading,
-  error,
-  selId,
-  onPick,
-}: {
-  quote: Quote;
-  onQuote: (q: Quote) => void;
-  q: string;
-  onQ: (v: string) => void;
-  list: Market[];
-  loading: boolean;
-  error: string | null;
-  selId: string | null;
-  onPick: (id: string) => void;
-}) {
-  return (
-    <div className="col">
-      <h3>交易對</h3>
-      <div className="tabs" style={{ marginBottom: 8 }}>
-        {QUOTES.map((qt) => (
-          <button key={qt} aria-selected={quote === qt} onClick={() => onQuote(qt)}>
-            {qt}
-          </button>
-        ))}
-      </div>
-      <input
-        type="text"
-        placeholder="搜尋幣種…"
-        value={q}
-        onChange={(e) => onQ(e.target.value)}
-        style={{ marginBottom: 8 }}
-      />
-      {/* 輪詢失敗時保留最後一次的價格，只在上面標示異常 */}
-      {error && (
-        <p className="muted" style={{ fontSize: 11, color: 'var(--rose)', marginBottom: 6 }}>
-          ⚠ {error}
-        </p>
-      )}
-      {/* 行情端點只服務 TWD。空列表配上「找不到交易對」會被誤讀成搜尋沒中，
-          所以這裡要講清楚是後端還沒有這個計價幣的資料。 */}
-      {!QUOTES_WITH_LIVE_DATA.includes(quote) && (
-        <p className="muted" role="note" style={{ fontSize: 11, lineHeight: 1.5, marginBottom: 8, color: 'var(--amber)' }}>
-          ⚠ 後端行情端點目前只提供 <b>TWD</b> 計價的即時報價，{quote} 交易對尚未接上。
-        </p>
-      )}
-      {loading ? (
-        <div className="state">
-          <span className="spinner" />
-        </div>
-      ) : (
-        <div className="mkt-list">
-          {list.map((m) => (
-            <button key={m.id} className="mkt-row" aria-selected={m.id === selId} onClick={() => onPick(m.id)}>
-              <span>
-                <span className="sym">
-                  {m.base}
-                  <span className="muted">/{m.quote}</span>
-                </span>
-                <br />
-                <span className="sub">{m.name}</span>
-              </span>
-              <span className="num">{fmt(m.price, m.quote)}</span>
-              <span className={`chg num ${m.change >= 0 ? 'up' : 'down'}`}>
-                {m.change >= 0 ? '+' : ''}
-                {m.change.toFixed(2)}%
-              </span>
+        <div className="tabs" style={{ marginBottom: 8 }}>
+          {RIGHT_TABS.map((t) => (
+            <button key={t.id} aria-selected={rightTab === t.id} onClick={() => setRightTab(t.id)}>
+              {t.label}
             </button>
           ))}
-          {list.length === 0 && <div className="empty">找不到交易對</div>}
+        </div>
+        {rightTab === 'chart' && sel && <PriceChart market={sel.id} base={sel.base} />}
+        {rightTab === 'book' && sel && (
+          <OrderBook
+            market={sel.id}
+            onPickPrice={(p) => setPickedPrice({ price: p, n: Date.now() })}
+          />
+        )}
+        {rightTab === 'balance' && <Balances state={dash} />}
+        {!sel && rightTab !== 'balance' && <div className="empty">請先選擇交易對</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── 帳戶狀態（取代原本在瀏覽器收金鑰的表單）───────────────
+
+function AccountGate({ detail }: { detail?: string }) {
+  return (
+    <div className="gate-mask">
+      <h4>後端未綁定 MAX 帳戶</h4>
+      <p>
+        金鑰放在後端（HMAC 簽章在伺服器端完成），瀏覽器不經手也不儲存。
+        請在 <code>agent-core/.env</code> 設定 <code>MAX_API_KEY</code> 與{' '}
+        <code>MAX_API_SECRET</code> 後重啟後端。
+      </p>
+      <p className="muted" style={{ fontSize: 11 }}>
+        驗證方式：<code>python scripts/max_check.py</code>
+      </p>
+      {detail && (
+        <div className="toast" data-err="true">
+          {detail}
         </div>
       )}
     </div>
   );
 }
 
-// ── 中欄：下單 / API 閘門 ───────────────────────────────────
+// ── 餘額 ────────────────────────────────────────────────────
+
+function Balances({ state }: { state: ReturnType<typeof useAsync<Awaited<ReturnType<typeof getDashboard>>>> }) {
+  const { data, loading, error, reload } = state;
+  if (loading || error) return <AsyncState loading={loading} error={error} onRetry={reload} />;
+
+  const all = data?.balances ?? [];
+  if (!all.length) return <div className="empty">沒有餘額</div>;
+
+  /**
+   * 台幣與美元穩定幣置頂：下單前要確認的就是這兩個，不該讓人在清單裡找。
+   *
+   * ⚠ TWD 與 USDT **就算是 0 也要畫出來**。後端只回餘額 > 0.000001 的幣種，
+   *   所以沒有 U 的時候這一格會整個消失 —— 但「看不到 USDT」與「USDT 是 0」
+   *   在下單前是兩件完全不同的事，前者會讓人以為沒載到而重新整理。
+   */
+  const PINNED = ['TWD', 'USDT'];
+  const cash = [
+    ...PINNED.map(
+      (c) => all.find((b) => b.currency === c) ?? { currency: c, balance: 0, locked: 0, staked: 0 },
+    ),
+    ...all.filter((b) => !PINNED.includes(b.currency) && USD_LIKE.has(b.currency)),
+  ];
+  const rest = all
+    .filter((b) => !PINNED.includes(b.currency) && !USD_LIKE.has(b.currency))
+    .sort((a, b) => (b.value_twd ?? 0) - (a.value_twd ?? 0));
+
+  return (
+    <div className="pos-scroll">
+      {cash.map((b) => (
+        <div
+          key={b.currency}
+          style={{
+            padding: '10px 12px',
+            marginBottom: 6,
+            background: 'var(--panel-2)',
+            borderLeft: `2px solid ${b.currency === 'TWD' ? 'var(--cyan)' : 'var(--green)'}`,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <b style={{ fontSize: 13 }}>{b.currency}</b>
+            <b className="num" style={{ fontSize: 16 }}>
+              {money(b.balance, 6)}
+            </b>
+          </div>
+          {(b.locked ?? 0) > 0 && (
+            <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
+              掛單鎖定 {money(b.locked ?? 0, 6)}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {rest.length > 0 && (
+        <table className="pos-table" style={{ marginTop: 8 }}>
+          <thead>
+            <tr>
+              <th>幣種</th>
+              <th>可用</th>
+              <th>估值 TWD</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rest.map((b) => (
+              <tr key={b.currency}>
+                <td>{b.currency}</td>
+                <td>{money(b.balance, 6)}</td>
+                <td className={b.value_twd == null ? 'muted' : ''}>
+                  {b.value_twd == null ? '無報價' : money(b.value_twd, 0)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
+        總估值 {money(data?.total_value_twd ?? 0, 0)} TWD
+      </div>
+    </div>
+  );
+}
+
+// ── 下單表單 ────────────────────────────────────────────────
 
 function OrderForm({
   market,
   balances,
   onDone,
+  pickedPrice,
 }: {
-  market: Market;
+  market: MarketRow;
   balances: Balance[];
   onDone: () => void;
+  /** 從訂單簿點來的價格。nonce 讓連點同一檔也會生效。 */
+  pickedPrice: { price: number; n: number } | null;
 }) {
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
-  const [type, setType] = useState<'limit' | 'market'>('limit');
+  // 預設「只掛單」：這個介面的預設行為應該是最不會意外花錢的那一個。
+  const [type, setType] = useState<OrdType>('post_only');
   const [price, setPrice] = useState('');
   const [volume, setVolume] = useState('');
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<OrderPreview | null>(null);
   const [toast, setToast] = useState<{ text: string; err: boolean } | null>(null);
 
-  /**
-   * 只在「換交易對」時把價格帶入，不跟著每 3 秒的輪詢走。
-   * 否則使用者正在改價格會被行情蓋掉，那是最惱人的交易介面缺陷。
-   */
+  // 只在換交易對時清空數量，不跟著每 5 秒的輪詢走 ——
+  // 使用者正在改價格卻被行情蓋掉，是最惱人的交易介面缺陷。
   useEffect(() => {
-    setPrice(tickPrice(market.price));
     setVolume('');
+    setPreview(null);
     setToast(null);
   }, [market.id]);
 
-  const avail = (asset: string) => balances.find((b) => b.asset === asset)?.available ?? 0;
-  const px = type === 'market' ? market.price : Number(price) || 0;
+  /**
+   * 委託價在「換交易對／換方向／換委託型別」時重新帶入。
+   *
+   * 方向與型別也要重帶，因為只掛單的合法價格區間是**單向**的：買單要在市價
+   * 之下、賣單要在市價之上。從買切到賣時沿用舊價格，等於必定落在錯的那一側。
+   * 一樣不跟輪詢走 —— 依賴只有這三個，行情跳動不會蓋掉手動輸入。
+   */
+  useEffect(() => {
+    setPrice(seedPrice(type, side, market));
+    // 行情每 5 秒換一次物件，但這裡只依賴 id/精度，不依賴 market.last
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market.id, side, type]);
+
+  /**
+   * 訂單簿點價 → 填進價格欄。市價單沒有價格欄，點了不該有反應。
+   *
+   * 刻意不順便切換 side：點賣單那一側不代表想賣（照著賣一的價格買，正是
+   * 「掛在賣一等成交」的做法）。方向由使用者自己決定。
+   */
+  useEffect(() => {
+    if (pickedPrice && type !== 'market') setPrice(trim(pickedPrice.price, market.quote_precision));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedPrice?.n]);
+
+  const quoteCur = market.quote.toUpperCase();
+  const avail = (asset: string) => balances.find((b) => b.currency === asset)?.balance ?? 0;
+  const px = type === 'market' ? market.last : Number(price) || 0;
   const vol = Number(volume) || 0;
   const total = px * vol;
   const fee = total * FEE[type];
-  const max = side === 'buy' ? (px > 0 ? avail(market.quote) / px : 0) : avail(market.base);
-  const invalid = vol <= 0 || (type === 'limit' && px <= 0) || vol > max;
+  const max = side === 'buy' ? (px > 0 ? avail(quoteCur) / px : 0) : avail(market.base);
+  const minBase = market.min_base_amount ?? 0;
 
-  const submit = async () => {
+  const tooSmall = minBase > 0 && vol > 0 && vol < minBase;
+  /** 只掛單的委託價跨過市價 → 交易所必拒。用最新價近似最佳買/賣價。 */
+  const crossesMarket =
+    type === 'post_only' && px > 0 &&
+    (side === 'buy' ? px >= market.last : px <= market.last);
+  const invalid =
+    vol <= 0 || (type !== 'market' && px <= 0) || vol > max || tooSmall || crossesMarket;
+
+  const doPreview = async () => {
     setBusy(true);
     setToast(null);
     try {
-      const r = await placeOrder({
-        marketId: market.id,
+      const p = await previewOrder({
+        market: market.id,
         side,
-        type,
-        ...(type === 'limit' && { price: px }),
         volume: vol,
+        ord_type: type,
+        // limit 與 post_only 都必須帶價格；市價單不帶
+        ...(type !== 'market' && { price: px }),
       });
-      setToast({ text: `${r.message}（單號 ${r.id}）`, err: false });
-      setVolume('');
-      onDone();
+      setPreview(p);
     } catch (e) {
-      setToast({ text: e instanceof Error ? e.message : '下單失敗', err: true });
+      setToast({ text: e instanceof Error ? e.message : '無法產生下單計畫', err: true });
     } finally {
       setBusy(false);
     }
   };
 
+  if (preview) {
+    return (
+      <ConfirmOrder
+        preview={preview}
+        onSent={(msg) => {
+          setPreview(null);
+          setVolume('');
+          setToast({ text: msg, err: false });
+          onDone();
+        }}
+        onCancel={(msg) => {
+          setPreview(null);
+          if (msg) setToast({ text: msg, err: false });
+        }}
+      />
+    );
+  }
+
   return (
     <>
-      <DemoData what="下單" />
-      <div className="side-tabs">
+      {/* 下單前最常確認的兩個數字，放在表單正上方而不是右欄 —— 眼睛不用移開 */}
+      <div className="summary" style={{ background: 'var(--panel-2)', padding: '6px 8px' }}>
+        <span>可用 {side === 'buy' ? quoteCur : market.base}</span>
+        <b className="num">{money(side === 'buy' ? avail(quoteCur) : avail(market.base), 6)}</b>
+      </div>
+
+      <div className="side-tabs" style={{ marginTop: 10 }}>
         <button data-side="buy" aria-selected={side === 'buy'} onClick={() => setSide('buy')}>
           買入
         </button>
@@ -248,24 +434,40 @@ function OrderForm({
         </button>
       </div>
 
-      <div className="tabs" style={{ marginBottom: 10 }}>
-        {(['limit', 'market'] as const).map((t) => (
-          <button key={t} aria-selected={type === t} onClick={() => setType(t)}>
-            {t === 'limit' ? '限價' : '市價'}
+      <div className="tabs" style={{ marginBottom: 4 }}>
+        {ORD_TYPES.map((t) => (
+          <button key={t.id} aria-selected={type === t.id} onClick={() => setType(t.id)} title={t.hint}>
+            {t.label}
           </button>
         ))}
       </div>
+      {/* 委託型別的差別是「錢會不會現在就出去」，值得一行字講清楚而不是只靠 tooltip */}
+      <p className="muted" style={{ fontSize: 11, marginBottom: 10 }}>
+        {ORD_TYPES.find((t) => t.id === type)?.hint}
+      </p>
 
       <label className="field">
-        <span>價格（{market.quote}）</span>
+        <span>價格（{quoteCur}）</span>
         <input
           type="number"
           value={type === 'market' ? '' : price}
-          placeholder={type === 'market' ? '以市價成交' : ''}
+          placeholder={type === 'market' ? `以市價成交（約 ${money(market.last, 2)}）` : ''}
           disabled={type === 'market'}
           onChange={(e) => setPrice(e.target.value)}
         />
       </label>
+
+      {/*
+        只掛單掛不上去的唯一原因就是價格跨過市價，而使用者不會知道「跨過」是
+        哪一邊。直接算給他看，並在會被拒的時候先擋住 —— 送出去被交易所退件
+        才知道，是最差的學習方式。
+      */}
+      {type === 'post_only' && crossesMarket && (
+        <p style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 8 }}>
+          這個價格會立刻成交 → 交易所會整筆拒絕。
+          {side === 'buy' ? '買單要低於' : '賣單要高於'}市價 {money(market.last, 4)}。
+        </p>
+      )}
 
       <label className="field">
         <span>數量（{market.base}）</span>
@@ -274,39 +476,51 @@ function OrderForm({
 
       <div className="pcts">
         {[25, 50, 75, 100].map((p) => (
-          <button key={p} onClick={() => setVolume(((max * p) / 100).toFixed(6))}>
+          <button key={p} onClick={() => setVolume(trim((max * p) / 100, market.base_precision))}>
             {p}%
           </button>
         ))}
       </div>
 
       <div className="summary">
-        <span>可用</span>
-        <span className="num">
-          {side === 'buy'
-            ? `${fmt(avail(market.quote), market.quote)} ${market.quote}`
-            : `${avail(market.base).toFixed(6)} ${market.base}`}
-        </span>
-      </div>
-      <div className="summary">
         <span>成交額</span>
         <span className="num">
-          {fmt(total, market.quote)} {market.quote}
+          {money(total, 2)} {quoteCur}
         </span>
       </div>
       <div className="summary">
-        <span>手續費 ({(FEE[type] * 100).toFixed(3)}%)</span>
+        <span>手續費（約 {(FEE[type] * 100).toFixed(2)}%）</span>
         <span className="num muted">
-          {fmt(fee, market.quote)} {market.quote}
+          {money(fee, 4)} {quoteCur}
         </span>
       </div>
+      {minBase > 0 && (
+        <div className="summary">
+          <span>最小下單量</span>
+          <span className="num muted">
+            {minBase} {market.base}
+          </span>
+        </div>
+      )}
 
-      <button className="submit" data-side={side} disabled={invalid || busy} onClick={() => void submit()}>
-        {busy ? '送出中…' : `${side === 'buy' ? '買入' : '賣出'} ${market.base}`}
+      <button
+        className="submit"
+        data-side={side}
+        disabled={invalid || busy}
+        onClick={() => void doPreview()}
+      >
+        {busy ? '產生計畫中…' : `預覽${side === 'buy' ? '買入' : '賣出'}`}
       </button>
+      <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+        按下之後會再出現一次確認，這一步不會送單。
+      </p>
+
       {vol > max && (
-        <p className="muted" style={{ fontSize: 11, color: 'var(--rose)', marginTop: 6 }}>
-          數量超過可用餘額
+        <p style={{ fontSize: 11, color: 'var(--rose)', marginTop: 6 }}>數量超過可用餘額</p>
+      )}
+      {tooSmall && (
+        <p style={{ fontSize: 11, color: 'var(--rose)', marginTop: 6 }}>
+          低於交易所最小下單量 {minBase} {market.base}
         </p>
       )}
       {toast && (
@@ -318,136 +532,143 @@ function OrderForm({
   );
 }
 
+// ── 確認框 ──────────────────────────────────────────────────
+
 /**
- * 這裡曾經是一張收 MAX ACCESS/SECRET KEY 的表單。
- *
- * 拿掉的理由：**那兩個欄位收到的金鑰哪裡都沒去。** 真正在對 MAX 簽名的是後端
- * （`.env` 的 `MAX_API_KEY`）。一張問你要交易所 secret、卻只是把它丟掉的表單，
- * 比沒有表單危險 —— 使用者沒有理由知道它是裝飾，而他填進去的是真的金鑰。
+ * 送出前的最後一關。**顯示的每一個數字都取自後端凍結的計畫**，一個都不從
+ * 上面的表單讀 —— 那正是這一步存在的意義。
  */
-function CredsForm() {
-  return (
-    <div className="gate-mask">
-      <h4>查看我的 MAX 帳戶</h4>
-      <p>餘額與持倉由後端以伺服器端保管的 MAX API 金鑰讀取。左側行情是公開資料，不需要這一步。</p>
-      <button className="btn btn-primary" onClick={() => connect()}>
-        連接
-      </button>
-      <p className="warn">
-        瀏覽器不會、也不該持有交易所金鑰 —— 任何一個 XSS 都能把它讀走。簽名一律在後端完成。
-      </p>
-    </div>
-  );
-}
+function ConfirmOrder({
+  preview,
+  onSent,
+  onCancel,
+}: {
+  preview: OrderPreview;
+  onSent: (msg: string) => void;
+  onCancel: (msg?: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const p = preview.plan;
+  const live = preview.mode === 'live';
 
-function Locked() {
-  return (
-    <div className="gate-mask">
-      <h4>持倉未載入</h4>
-      <p>點左側的「連接」即可向後端讀取你的現貨持有部位、成本與未實現盈虧。</p>
-    </div>
-  );
-}
+  // 限價偏離市價多少。手滑把價格打錯一個數量級時，這一行是最後一道人眼防線。
+  const dev = p.latest_price > 0 && p.ord_type === 'limit' && p.price
+    ? ((p.price - p.latest_price) / p.latest_price) * 100
+    : null;
 
-// ── 右欄：持倉 ──────────────────────────────────────────────
+  const ex = preview.exposure;
+  const used = ex.notional_twd ?? 0;
+  const cap = ex.max_notional_twd ?? 0;
 
-function Positions({ state }: { state: ReturnType<typeof useAsync<Balance[]>> }) {
-  const { data, loading, error, reload } = state;
-  // 成本另外抓，不擋餘額 —— 那支端點要重播整本帳本，會慢好幾秒。
-  const cost = useAsync(() => getCostBasis(), []);
+  const confirm = async () => {
+    setBusy(true);
+    setErr(null);
+    const r = await approveOrder(preview.token);
+    setBusy(false);
+    if (r.ok) onSent(r.detail);
+    else setErr(r.detail);
+  };
 
-  if (loading) {
-    return (
-      <div className="state">
-        <span className="spinner" />
-        讀取帳戶…
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="state err">
-        <p>⚠ {error}</p>
-        <button className="btn" onClick={reload}>
-          重試
-        </button>
-      </div>
-    );
-  }
-
-  const qtyOf = (b: Balance) => b.available + b.locked + b.staked;
-  const rows = (data ?? []).filter((b) => qtyOf(b) > 0);
-  const totalValue = rows.reduce((s, b) => s + (b.price === null ? 0 : qtyOf(b) * b.price), 0);
-  const avgCostOf = (asset: string) => (asset === 'TWD' ? 1 : cost.data?.get(asset) ?? null);
-  const noCostBasis = !cost.loading && rows.some((b) => b.asset !== 'TWD' && avgCostOf(b.asset) === null);
+  const cancel = async () => {
+    setBusy(true);
+    // 不是只把畫面關掉：留著一個活的 pending token 等於留了一把鑰匙
+    await rejectOrder(preview.token);
+    setBusy(false);
+    onCancel('已取消，該筆計畫已作廢');
+  };
 
   return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <span className="badge">
-          <i />
-          已連接
+    <div
+      style={{
+        padding: 14,
+        background: 'var(--panel-2)',
+        border: `2px solid ${live ? 'var(--rose)' : 'var(--line)'}`,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span
+          className="badge"
+          style={{
+            color: live ? 'var(--rose)' : 'var(--dim)',
+            borderColor: live ? 'var(--rose)' : 'var(--dim)',
+          }}
+        >
+          <i style={{ background: live ? 'var(--rose)' : 'var(--dim)' }} />
+          {live ? '實盤 · 真實資金' : '模擬盤 · 不會送到交易所'}
         </span>
-        <button className="btn" style={{ padding: '3px 10px', fontSize: 11 }} onClick={disconnect}>
-          中斷連接
-        </button>
       </div>
-      <div className="summary" style={{ marginBottom: 8 }}>
-        <span>資產總值</span>
-        <b className="num">NT$ {twd(totalValue)}</b>
+
+      <b style={{ fontSize: 14, display: 'block', marginBottom: 10 }}>{preview.summary}</b>
+
+      <div className="summary">
+        <span>交易對</span>
+        <span className="num">{p.market.toUpperCase()}</span>
       </div>
-      {/* col-drop 的欄位在窄螢幕會被 CSS 藏起來，只留幣種/可用/現值/盈虧 */}
-      <div className="pos-scroll">
-        <table className="pos-table">
-          <thead>
-            <tr>
-              <th>幣種</th>
-              <th>可用</th>
-              <th className="col-drop">凍結</th>
-              <th className="col-drop">均價</th>
-              <th>現值</th>
-              <th>盈虧</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((b) => {
-              const qty = qtyOf(b);
-              const frozen = b.locked + b.staked;
-              const value = b.price === null ? null : qty * b.price;
-              const avgCost = avgCostOf(b.asset);
-              const known = b.asset !== 'TWD' && b.price !== null && avgCost !== null;
-              const pnl = known ? value! - qty * avgCost! : null;
-              const pct = known && avgCost! > 0 ? (b.price! / avgCost! - 1) * 100 : null;
-              return (
-                <tr key={b.asset}>
-                  <td>{b.asset}</td>
-                  <td>{b.available.toLocaleString('zh-TW', { maximumFractionDigits: 5 })}</td>
-                  <td className="muted col-drop" title={b.staked > 0 ? `含質押中 ${b.staked}` : undefined}>
-                    {frozen > 0 ? frozen.toLocaleString('zh-TW', { maximumFractionDigits: 5 }) : '—'}
-                  </td>
-                  <td className="muted col-drop">
-                    {b.asset === 'TWD' ? '—' : cost.loading ? '計算中…' : orDash(avgCost, money)}
-                  </td>
-                  <td>{orDash(value, twd)}</td>
-                  <td className={pnl === null ? 'muted' : pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'muted'}>
-                    {pnl === null || pct === null
-                      ? '—'
-                      : `${pnl >= 0 ? '+' : ''}${twd(pnl)} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="summary">
+        <span>方向 / 類型</span>
+        <span className={`num ${p.side === 'buy' ? 'up' : 'down'}`}>
+          {p.side === 'buy' ? '買入' : '賣出'} ·{' '}
+          {p.ord_type === 'market' ? '市價' : p.ord_type === 'post_only' ? '只掛單' : '限價'}
+        </span>
       </div>
-      {noCostBasis && (
-        <p className="muted" role="note" style={{ fontSize: 11, lineHeight: 1.5, marginTop: 10, color: 'var(--amber)' }}>
-          ⚠ 均價與盈虧顯示「—」：成本要由 <code>/api/positions</code> 重播交易帳本才算得出來，這次沒有取得{cost.error ? `（${cost.error}）` : ''}。
+      {/* 送出後會發生什麼，在按下去之前講完 */}
+      {p.ord_type === 'post_only' && (
+        <p className="muted" style={{ fontSize: 11, margin: '4px 0' }}>
+          只掛單：掛上訂單簿等待成交，不會立刻成交。若送出當下就會成交，交易所整筆拒絕。
         </p>
       )}
-      <p className="muted" style={{ fontSize: 11, marginTop: 10 }}>
-        餘額與均價來自後端的 MAX API 金鑰。重整頁面後這裡會回到未連接狀態。
-      </p>
-    </>
+      <div className="summary">
+        <span>數量</span>
+        <span className="num">{p.volume}</span>
+      </div>
+      <div className="summary">
+        <span>價格</span>
+        <span className="num">{p.price != null ? money(p.price, 4) : `市價 ≈ ${money(p.latest_price, 4)}`}</span>
+      </div>
+      {dev != null && Math.abs(dev) >= 0.5 && (
+        <div className="summary">
+          <span>偏離市價</span>
+          <span className={`num ${Math.abs(dev) > 10 ? 'down' : 'muted'}`}>
+            {dev > 0 ? '+' : ''}
+            {dev.toFixed(2)}%（市價 {money(p.latest_price, 4)}）
+          </span>
+        </div>
+      )}
+      <div className="summary">
+        <span>預估金額</span>
+        <b className="num">{money(p.est_notional_twd, 0)} TWD</b>
+      </div>
+
+      {live && cap > 0 && (
+        <div className="summary">
+          <span>{ex.window_hours}h 額度</span>
+          <span className="num muted">
+            {money(used, 0)} → {money(used + p.est_notional_twd, 0)} / {money(cap, 0)} TWD ·{' '}
+            {ex.orders ?? 0}/{ex.max_orders ?? 0} 筆
+          </span>
+        </div>
+      )}
+
+      <div className="muted" style={{ fontSize: 10, marginTop: 8, wordBreak: 'break-all' }}>
+        計畫指紋 {preview.hash.slice(0, 24)}… · 逾 {preview.ttl_sec} 秒未確認自動失效
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 12 }}>
+        {/* 文字要短到不換行 —— 模式已經由上方的徽章與整個框的紅邊講清楚了 */}
+        <button className="submit" data-side={p.side} disabled={busy} onClick={() => void confirm()}>
+          {busy ? '送出中…' : live ? '送出真單' : '確認送出'}
+        </button>
+        <button className="btn" disabled={busy} onClick={() => void cancel()}>
+          取消
+        </button>
+      </div>
+
+      {err && (
+        <div className="toast" data-err="true">
+          {err}
+        </div>
+      )}
+    </div>
   );
 }

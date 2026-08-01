@@ -3,6 +3,7 @@ import { getEvents, getNews } from '../../api';
 import { useAsync } from '../useAsync';
 import { Panel, AsyncState } from '../Panel';
 import { DemoData } from '../DemoData';
+import { PixelCover, eventCover, newsCover } from '../PixelCover';
 
 /** 官方消息與活動是同一種「左列表右詳情」，共用一份版面。 */
 function SplitList<T extends { id: string }>({
@@ -42,19 +43,27 @@ export function MaxNews() {
         <SplitList
           items={data}
           renderNav={(n) => (
-            <>
-              <span className="k">
-                {n.category} · {n.date}
+            <span className="news-row">
+              <PixelCover kind={newsCover(n)} size={30} />
+              <span className="news-txt">
+                <span className="k">
+                  {n.category} · {n.date}
+                </span>
+                <span className="t">{n.title}</span>
               </span>
-              <span className="t">{n.title}</span>
-            </>
+            </span>
           )}
           renderBody={(n) => (
             <>
-              <h3>{n.title}</h3>
-              <p className="muted" style={{ fontSize: 11, letterSpacing: '0.08em' }}>
-                {n.category} · 發布於 {n.date}
-              </p>
+              <div className="news-hero">
+                <PixelCover kind={newsCover(n)} size={48} />
+                <div className="news-hero-txt">
+                  <h3>{n.title}</h3>
+                  <p className="muted" style={{ fontSize: 11, letterSpacing: '0.08em' }}>
+                    {n.category} · 發布於 {n.date}
+                  </p>
+                </div>
+              </div>
               <div style={{ height: 12 }} />
               {n.body.map((p, i) => (
                 <p key={i}>{p}</p>
@@ -77,17 +86,25 @@ export function MaxEvents() {
         <SplitList
           items={data}
           renderNav={(e) => (
-            <>
-              <span className="k">{e.tag}</span>
-              <span className="t">{e.title}</span>
-            </>
+            <span className="news-row">
+              <PixelCover kind={eventCover(e)} size={30} />
+              <span className="news-txt">
+                <span className="k">{e.tag}</span>
+                <span className="t">{e.title}</span>
+              </span>
+            </span>
           )}
           renderBody={(e) => (
             <>
-              <h3>{e.title}</h3>
-              <p className="muted" style={{ fontSize: 11, letterSpacing: '0.08em' }}>
-                {e.period}
-              </p>
+              <div className="news-hero">
+                <PixelCover kind={eventCover(e)} size={48} />
+                <div className="news-hero-txt">
+                  <h3>{e.title}</h3>
+                  <p className="muted" style={{ fontSize: 11, letterSpacing: '0.08em' }}>
+                    {e.period}
+                  </p>
+                </div>
+              </div>
               <div className="sentiment" style={{ marginTop: 12 }}>
                 <span style={{ fontSize: 11, letterSpacing: '0.1em', color: 'var(--dim)' }}>獎勵</span>
                 <b style={{ color: 'var(--green)' }}>{e.reward}</b>

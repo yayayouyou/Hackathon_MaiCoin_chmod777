@@ -23,7 +23,7 @@ export type DataSource = 'live' | 'sample' | 'mock';
 
 export type Alert = { id: string; level: 'info' | 'warn' | 'danger'; text: string; at: number };
 
-export type Ticker = { sym: string; last: number; change_pct: number };
+export type Ticker = { sym: string; quote: string; last: number; change_pct: number };
 
 export const hud = {
   tickers: live<Ticker[]>([]),

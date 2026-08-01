@@ -429,7 +429,10 @@ def _create_max_order_raw(
         "volume": str(volume),
         "ord_type": ord_type.lower()
     }
-    if ord_type.lower() == "limit" and price is not None:
+    # ⚠ post_only（只掛單）與 limit 一樣**必須帶 price** —— 少了它 MAX 會退件。
+    #   漏掉這一行的話 post_only 送出去會變成沒有委託價的單，症狀是交易所直接
+    #   拒絕，而錯誤訊息不會告訴你是前端漏傳。
+    if ord_type.lower() in ("limit", "post_only") and price is not None:
         params["price"] = str(price)
     if client_oid:
         params["client_oid"] = client_oid

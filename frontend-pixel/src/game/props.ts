@@ -83,7 +83,7 @@ export type Light = { x: number; y: number; r: number; color: string; strength: 
  * 圖案而不是光。光源由道具推導而來，房間定義裡不必額外維護一份清單。
  */
 export function propLights(p: Prop): Light[] {
-  const a = 'accent' in p ? ACCENT[p.accent] : null;
+  const a = 'accent' in p && p.accent ? ACCENT[p.accent] : null;
   switch (p.kind) {
     case 'pillar':
       return [{ x: p.x + 8, y: p.y + 50, r: 44, color: C['7'], strength: 0.4 }];
@@ -96,7 +96,7 @@ export function propLights(p: Prop): Light[] {
     case 'hologram':
       return [{ x: p.x + 20, y: p.y + 38, r: 66, color: C.n, strength: 0.7 }];
     case 'robot':
-      return [{ x: p.x + 12, y: p.y + 32, r: 44, color: C.p, strength: 0.55 }];
+      return [{ x: p.x + 12, y: p.y + 32, r: 44, color: a ? a.hi : C.p, strength: 0.55 }];
     case 'chartboard':
       return [{ x: p.x + 44, y: p.y + 48, r: 88, color: C.n, strength: 0.8 }];
     // 金幣雕像是大廳的地標，光池也該是全場最大的那一圈
@@ -182,7 +182,7 @@ export function drawProp(ctx: CanvasRenderingContext2D, p: Prop, t: number): voi
     case 'screenwall':
       return screenwall(ctx, p.x, p.y, p.w, t);
     case 'robot':
-      return robot(ctx, p.x, p.y, t);
+      return robot(ctx, p.x, p.y, t, p.accent);
     case 'plant':
       return plant(ctx, p.x, p.y);
     case 'ticker':
@@ -585,20 +585,23 @@ function screenwall(ctx: CanvasRenderingContext2D, x: number, y: number, w: numb
  * 客服機器人：懸浮 + 眨眼。它是道具而不是 NPC，因為它不會移動、
  * 而且長得跟人形 sprite 完全不同，走道具那條路可以直接吃到 y 排序。
  */
-function robot(ctx: CanvasRenderingContext2D, x: number, y: number, t: number) {
+function robot(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, accent?: Accent) {
+  // 眼睛、天線與懸浮光都吃站點的主題色；MAIA 傳 'max' 進來就是品牌藍，
+  // 跟它所在的 MAX 藍色資訊角連成一氣。沒帶 accent 時退回原本的琥珀。
+  const hi = accent ? ACCENT[accent].hi : C.p;
   const lift = Math.round(Math.sin(t * 1.8) * 2);
   const by = y + lift;
   drawShadow(ctx, x + 12, y + 34, 9 - lift, 3);
-  glow(ctx, x + 4, by + 8, 16, 14, C.p, 0.4);
+  glow(ctx, x + 4, by + 8, 16, 14, hi, 0.4);
   bevelBox(ctx, x + 2, by + 20, 20, 10, DARK_METAL); // 懸浮基座
-  ctx.fillStyle = C.p;
+  ctx.fillStyle = hi;
   ctx.fillRect(x + 5, by + 28, 14, 1);
   bevelBox(ctx, x + 4, by + 6, 16, 16, METAL); // 頭
   ctx.fillStyle = C['0'];
   ctx.fillRect(x + 6, by + 9, 12, 8); // 面板
   // 每三秒眨一次眼，眨眼期間畫成一條線
   const blink = t % 3 < 0.12;
-  ctx.fillStyle = C.p;
+  ctx.fillStyle = hi;
   if (blink) {
     ctx.fillRect(x + 8, by + 13, 3, 1);
     ctx.fillRect(x + 13, by + 13, 3, 1);
@@ -610,7 +613,7 @@ function robot(ctx: CanvasRenderingContext2D, x: number, y: number, t: number) {
   ctx.fillRect(x + 9, by + 4, 6, 2); // 天線座
   ctx.fillStyle = C['6'];
   ctx.fillRect(x + 11, by, 2, 5);
-  ctx.fillStyle = C.p;
+  ctx.fillStyle = hi;
   ctx.fillRect(x + 10, by - 2, 4, 3);
 }
 
