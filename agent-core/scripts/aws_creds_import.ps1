@@ -3,33 +3,30 @@
     把黑客松給的臨時 AWS 憑證匯入本機（寫成 ~/.aws 的具名 profile），供 AWS CLI 與 boto3 共用。
 
 .DESCRIPTION
-    為什麼需要這支：黑客松發的是 STS 臨時憑證（三個一組、數小時到期），而活動頁面
-    給的複製區塊是 bash 的 `export AWS_...="..."` 格式 —— 在 PowerShell 貼上去無效
-    （PowerShell 要 $env:AWS_...="..."），而且只對「那一個」終端機視窗有效：
-    你在別的視窗、或 IDE 內開的 shell、或 uvicorn 子行程，全都看不到。
+    為什麼需要這支：黑客松發的是 STS 臨時憑證（三個一組、數小時到期），活動頁面給的
+    複製區塊是 bash 的 export 格式，在 PowerShell 直接貼上無效，而且只對「那一個」終端機
+    視窗有效：你在別的視窗、或 IDE 內開的 shell、或 uvicorn 子行程，全都看不到。
     這是「我明明已經貼上 token 了，程式卻說找不到憑證」的標準成因。
 
     這支腳本把憑證寫進 ~/.aws/credentials 的一個 profile（預設名 hackathon），
-    於是：① 任何新終端機都吃得到 ② AWS CLI 與 boto3 走同一份 ③ 續期只要重跑一次。
+    於是：任何新終端機都吃得到、AWS CLI 與 boto3 走同一份、續期只要重跑一次。
     只覆蓋該 profile 區塊，其他 profile 原樣保留。
 
     憑證不會被印出來（只顯示末 4 碼），也不會寫進專案目錄。
 
+.PARAMETER Text
+    直接把整段憑證字串傳進來（可先用 Get-Clipboard -Raw 取得再傳）。
+
+.PARAMETER Path
+    從純文字檔讀取憑證區塊。
+
 .EXAMPLE
-    # 1) 從活動頁面複製整個憑證區塊（Ctrl+C），然後：
     .\scripts\aws_creds_import.ps1
+    從剪貼簿讀取憑證區塊（先在活動頁面 Ctrl+C 複製整段）。
 
 .EXAMPLE
-    # 2) 直接貼在參數裡（多行字串）
-    .\scripts\aws_creds_import.ps1 -Text @'
-    export AWS_ACCESS_KEY_ID="ASIA..."
-    export AWS_SECRET_ACCESS_KEY="..."
-    export AWS_SESSION_TOKEN="..."
-    '@
-
-.EXAMPLE
-    # 3) 存成檔案再匯入，並指定 region / profile 名稱
     .\scripts\aws_creds_import.ps1 -Path .\creds.txt -Region us-east-1 -ProfileName hackathon
+    從檔案匯入，並指定 region 與 profile 名稱。
 #>
 [CmdletBinding()]
 param(
@@ -53,12 +50,11 @@ if ($Text) {
     if (-not $raw) { throw "剪貼簿是空的。請先複製憑證區塊，或用 -Text / -Path 指定。" }
 }
 
-# ---- 解析：容忍 export / set / $env: / 純 KEY=VALUE 四種寫法，引號可有可無 ----
+# ---- 解析：容忍 export / set / env 前綴 / 純 KEY=VALUE 四種寫法，引號可有可無 ----
 function Get-CredValue {
     param([string]$Blob, [string]$Key)
     $m = [regex]::Match(
         $Blob,
-        # 允許前綴 export / set / $env: ，等號兩側空白，值可用單雙引號包住
         '(?im)^\s*(?:export\s+|set\s+|\$env:)?' + [regex]::Escape($Key) + '\s*=\s*["'']?([^"''\r\n]+)["'']?\s*$'
     )
     if ($m.Success) { return $m.Groups[1].Value.Trim() }
