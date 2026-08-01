@@ -17,6 +17,7 @@ import {
 import { renderMarkdown } from '../../ui/markdown';
 import { chartSpecFor, Disclaimer, planAgentBody } from '../../ui/vizCards';
 import { listSessions, type SessionSummary } from '../../api/agent';
+import { transcribeAudio } from '../../api/stt';
 import { closeChatDock, openChatDock, useDock } from '../dockStore';
 
 /** 把一則帶圖表的 agent 答案渲染成「文字 markdown + 圖表卡」交錯的節點（規劃見 vizCards.planAgentBody）。 */
@@ -113,6 +114,13 @@ const MODEL_KEY = 'maia-model';
 /** ISO 時間 → 「MM-DD HH:mm」。不做 Date 解析，直接切字串（後端已是台北時間）。 */
 const fmtWhen = (iso: string): string => (iso || '').slice(5, 16).replace('T', ' ');
 
+/** 瀏覽器是否支援語音輸入所需的原生 API（無則不顯示麥克風鈕）。 */
+const MIC_SUPPORTED =
+  typeof navigator !== 'undefined' &&
+  !!navigator.mediaDevices &&
+  typeof navigator.mediaDevices.getUserMedia === 'function' &&
+  typeof MediaRecorder !== 'undefined';
+
 function Elapsed({ busy }: { busy: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   // rAF 而不是 setInterval —— `hud/feeds.ts` 是全 app 唯一的 setInterval。
@@ -196,6 +204,53 @@ export function AgentDock() {
       alive = false;
     };
   }, [historyOpen]);
+
+  // 語音輸入：原生 MediaRecorder 錄音 → 停止後送後端 /api/transcribe → 文字填進輸入框（不自動送）。
+  const [recording, setRecording] = useState(false);
+  const [sttBusy, setSttBusy] = useState(false);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  const startMic = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setRecording(false);
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' });
+        if (blob.size < 800) return; // 幾乎沒講話就略過
+        setSttBusy(true);
+        transcribeAudio(blob)
+          .then((t) => {
+            const clean = t.trim();
+            if (clean) {
+              setText((prev) => (prev ? `${prev} ${clean}` : clean));
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }
+          })
+          .catch(() => {
+            /* 轉錄失敗：靜默收掉，不動已打的字（MVP 版） */
+          })
+          .finally(() => setSttBusy(false));
+      };
+      recRef.current = rec;
+      rec.start();
+      setRecording(true);
+    } catch {
+      // 拒絕麥克風權限（NotAllowedError）等 → 保持原狀，不擋打字
+      setRecording(false);
+    }
+  }, []);
+
+  const toggleMic = useCallback(() => {
+    if (recording) recRef.current?.stop();
+    else void startMic();
+  }, [recording, startMic]);
 
   const liveRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -459,6 +514,29 @@ export function AgentDock() {
       )}
 
       <div className="composer maia-composer">
+        {MIC_SUPPORTED && (
+          <button
+            className="maia-mic"
+            data-rec={recording ? '1' : '0'}
+            disabled={busy || sttBusy}
+            onClick={toggleMic}
+            title={recording ? '停止並轉文字' : '語音輸入（點一下開始說，再點一下轉文字）'}
+            aria-label="語音輸入"
+          >
+            {sttBusy ? (
+              <span className="spinner chip-spin" />
+            ) : recording ? (
+              <span className="maia-mic-rec" />
+            ) : (
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true">
+                <rect x="6" y="1" width="4" height="8" />
+                <path d="M3 8a5 5 0 0 0 10 0" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                <rect x="7" y="12" width="2" height="3" />
+                <rect x="5" y="14" width="6" height="1.5" />
+              </svg>
+            )}
+          </button>
+        )}
         <input
           ref={inputRef}
           type="text"

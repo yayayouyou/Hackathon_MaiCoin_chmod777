@@ -16,6 +16,7 @@ from loguru import logger
 from fastapi import FastAPI, Request, Depends, Header, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
@@ -89,8 +90,9 @@ class OrderPreviewRequest(BaseModel):
     market: str
     side: str                          # buy / sell
     volume: float
-    ord_type: str = "limit"            # limit / market
-    price: Optional[float] = None      # 市價單留空
+    # limit / market / post_only（只掛單：會立即成交的話交易所整筆拒絕）
+    ord_type: str = "limit"
+    price: Optional[float] = None      # 市價單留空；limit 與 post_only 必填
     exchange: str = "max"
 
 
@@ -702,6 +704,103 @@ def upload_report_to_s3(
         "download_url": url,
         "expires_in_seconds": 900,
     }
+
+
+# ── 語音轉文字（Amazon Transcribe 批次）────────────────────────
+def _audio_format(content_type: str) -> str:
+    """瀏覽器 MediaRecorder 的 mimeType → Transcribe MediaFormat。"""
+    ct = (content_type or "").lower()
+    if "webm" in ct:
+        return "webm"
+    if "ogg" in ct or "opus" in ct:
+        return "ogg"
+    if "mp4" in ct or "m4a" in ct or "aac" in ct:
+        return "mp4"
+    if "wav" in ct or "wave" in ct:
+        return "wav"
+    if "flac" in ct:
+        return "flac"
+    if "mpeg" in ct or "mp3" in ct:
+        return "mp3"
+    return "webm"  # Chrome MediaRecorder 預設是 audio/webm;codecs=opus
+
+
+def _run_transcribe(audio: bytes, content_type: str) -> Dict[str, Any]:
+    """（在 threadpool 執行；boto3 與輪詢皆阻塞）音檔 → S3 → Transcribe job → 文字。
+
+    批次沒有『送 blob 同步回文字』的 API，job 只吃 s3:// 物件，所以一定先 put_object。
+    憑證由環境/IAM 提供（同 Bedrock/S3）。轉完把音檔刪掉（隱私）。
+    """
+    import urllib.request
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    bucket = (os.getenv("S3_REPORTS_BUCKET") or "").strip()
+    region = os.getenv("AWS_DEFAULT_REGION") or os.getenv("BEDROCK_REGION") or None
+    lang = (os.getenv("TRANSCRIBE_LANGUAGE") or "zh-TW").strip()
+    fmt = _audio_format(content_type)
+    job = "maia-stt-" + secrets.token_urlsafe(9)
+    key = f"stt/{time.strftime('%Y/%m/%d', time.gmtime())}/{job}.{fmt}"
+
+    s3 = boto3.client("s3", region_name=region)
+    tx = boto3.client("transcribe", region_name=region)
+    try:
+        s3.put_object(Bucket=bucket, Key=key, Body=audio,
+                      ContentType=content_type or f"audio/{fmt}", ServerSideEncryption="AES256")
+        tx.start_transcription_job(
+            TranscriptionJobName=job, LanguageCode=lang, MediaFormat=fmt,
+            Media={"MediaFileUri": f"s3://{bucket}/{key}"})
+    except (BotoCoreError, ClientError) as exc:
+        logger.exception("Transcribe 起始失敗")
+        raise HTTPException(status_code=502, detail="語音轉文字啟動失敗") from exc
+
+    text, failed = "", None
+    for _ in range(40):  # 上限 ~32 秒
+        try:
+            info = tx.get_transcription_job(TranscriptionJobName=job)["TranscriptionJob"]
+        except (BotoCoreError, ClientError):
+            break
+        st = info["TranscriptionJobStatus"]
+        if st == "COMPLETED":
+            try:
+                data = json.loads(urllib.request.urlopen(info["Transcript"]["TranscriptFileUri"], timeout=15).read())
+                text = data["results"]["transcripts"][0]["transcript"]
+            except Exception:  # noqa: BLE001
+                text = ""
+            break
+        if st == "FAILED":
+            failed = info.get("FailureReason")
+            logger.warning(f"Transcribe job FAILED: {failed}")
+            break
+        time.sleep(0.8)
+
+    for fn in (lambda: tx.delete_transcription_job(TranscriptionJobName=job),
+               lambda: s3.delete_object(Bucket=bucket, Key=key)):
+        try:
+            fn()
+        except Exception:  # noqa: BLE001
+            pass
+
+    if failed:
+        raise HTTPException(status_code=422, detail=f"轉錄失敗：{failed}")
+    return {"text": text, "language": lang}
+
+
+@app.post("/api/transcribe")
+async def transcribe(request: Request, _: None = Depends(_require_approval_secret)):
+    """語音轉文字：前端錄音的 raw blob → Amazon Transcribe（批次）→ 回 {text}。
+
+    與下單相同的 same-origin approval secret 守衛，避免公開部署後被人拿去狂刷帳單。
+    前端只送音檔、拿文字；AWS 憑證一律留在後端（同 Bedrock/S3）。
+    """
+    if not (os.getenv("S3_REPORTS_BUCKET") or "").strip():
+        raise HTTPException(status_code=503, detail="尚未設定 S3_REPORTS_BUCKET（批次轉錄需先把音檔放 S3）")
+    audio = await request.body()
+    if not audio or len(audio) < 256:
+        raise HTTPException(status_code=400, detail="音檔為空或過短")
+    if len(audio) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="音檔過大（上限 12MB）")
+    return await run_in_threadpool(_run_transcribe, audio, request.headers.get("content-type") or "")
 
 
 @app.get("/api/markets")

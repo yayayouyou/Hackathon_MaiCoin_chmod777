@@ -483,6 +483,29 @@
   .maia-suggest { padding: 0 12px 8px; margin-top: 0; }
   .maia-composer { padding: 10px 12px; border-top: 1px solid #1e2635; margin-top: 0; }
 
+  /* 語音輸入麥克風鈕（composer 內，input 左側）。錄音中轉紅並閃爍。 */
+  .maia-mic {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    color: var(--dim);
+    background: #10192b;
+    border: 1px solid #1e2635;
+    border-radius: 0;
+    cursor: pointer;
+  }
+  .maia-mic:hover:not(:disabled) { color: var(--txt); border-color: var(--max); }
+  .maia-mic:disabled { opacity: 0.5; cursor: default; }
+  .maia-mic[data-rec='1'] { color: var(--rose); border-color: var(--rose); }
+  .maia-mic-rec {
+    width: 10px;
+    height: 10px;
+    background: var(--rose);
+    animation: maia-blink 1s steps(2, end) infinite;
+  }
+
   /* 工具晶片依資料來源上色 —— 顏色就是 grounding 的圖例 */
   .maia-chip[data-src='dna']    { border-color: var(--violet); color: var(--violet); }
   .maia-chip[data-src='max']    { border-color: var(--max); color: var(--max); }
