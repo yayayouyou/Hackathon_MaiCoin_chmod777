@@ -19,6 +19,7 @@ export type Player = {
   stance: string;
   favorites: string[];
   created_at: string;
+  role: 'user' | 'official';
 };
 
 export type Progress = {
@@ -31,7 +32,7 @@ export type Progress = {
 /** `?fast=1` 的假玩家。測試與離線錄影都不該需要後端。 */
 const CANNED: Player = {
   username: 'demo', nickname: '', character: '', stance: '',
-  favorites: [], created_at: '',
+  favorites: [], created_at: '', role: 'user',
 };
 
 /**

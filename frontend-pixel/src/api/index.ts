@@ -69,8 +69,35 @@ async function authed<T>(produce: () => T, ms?: number): Promise<T> {
   return settle(produce, ms);
 }
 
+type BridgePost = { id: string; author: string; text: string; source: 'platform' | 'threads'; source_author?: string; created_at?: string; permalink?: string | null; parent_post_id?: string | null };
+const bridgeHeaders = (): HeadersInit => ({ 'Content-Type': 'application/json' });
+async function throwBridgeError(response: Response, fallback: string): Promise<never> {
+  const body = await response.json().catch(() => ({})) as { detail?: string };
+  throw new Error(body.detail ?? fallback);
+}
+function asBridgePost(post: BridgePost): Post {
+  return { id: post.id, author: post.author, color: post.source === 'threads' ? '#8b5cf6' : '#35b8cf', time: post.created_at ? new Date(post.created_at).toLocaleString() : 'now', text: post.text, likes: 0, self: post.source === 'platform', source: post.source, sourceAuthor: post.source_author, permalink: post.permalink, parentPostId: post.parent_post_id };
+}
+
 export function getRooms(): Promise<RoomInfo[]> {
-  return settle(() => [...mock.ROOMS].sort((a, b) => b.heat - a.heat));
+  return fetch('/api/discussion-spaces').then(async (response) => {
+    if (!response.ok) throw new Error('Discussion spaces API unavailable');
+    const data = await response.json() as { spaces: Array<{ id: string; title: string; created_at: string }> };
+    return data.spaces.map((space, index) => ({
+      id: space.id, topic: space.title, tag: 'Threads', accent: 'cyan' as const,
+      heat: data.spaces.length - index, online: 1, change: 0, sentiment: 0,
+    }));
+  });
+}
+
+export async function createDiscussionSpace(title: string, openingText: string): Promise<void> {
+  const response = await fetch('/api/discussion-spaces', { method: 'POST', credentials: 'same-origin', headers: bridgeHeaders(), body: JSON.stringify({ title, opening_text: openingText }) });
+  if (!response.ok) await throwBridgeError(response, '建立討論區失敗');
+}
+
+export async function archiveDiscussionSpace(roomId: string): Promise<void> {
+  const response = await fetch(`/api/discussion-spaces/${encodeURIComponent(roomId)}`, { method: 'DELETE', credentials: 'same-origin', headers: bridgeHeaders() });
+  if (!response.ok) await throwBridgeError(response, '封存討論區失敗');
 }
 
 /** 策略牆。公開資料，不需要金鑰。 */
@@ -84,13 +111,21 @@ export function getReport(roomId: string): Promise<Report> {
 
 /** zone 的 onEnter 要傳 `rt.signal`，換場時在途的請求才會真的被放棄。 */
 export function getThread(roomId: string, signal?: AbortSignal): Promise<Post[]> {
-  return settle(() => mock.threadFor(roomId), undefined, signal);
+  return fetch(`/api/discussions/${encodeURIComponent(roomId)}`, { signal }).then(async (response) => {
+    if (!response.ok) throw new Error('Discussion API unavailable');
+    return ((await response.json()) as { posts: BridgePost[] }).posts.map(asBridgePost);
+  });
 }
 
-export function postMessage(roomId: string, author: string, text: string): Promise<Post> {
+export function postMessage(roomId: string, text: string, parentPostId?: string): Promise<Post> {
+  return (async () => {
+    const response = await fetch(`/api/discussions/${encodeURIComponent(roomId)}`, { method: 'POST', credentials: 'same-origin', headers: bridgeHeaders(), body: JSON.stringify({ text, parent_post_id: parentPostId ?? null }) });
+    if (!response.ok) await throwBridgeError(response, '留言發佈失敗');
+    return asBridgePost(((await response.json()) as { post: BridgePost }).post);
+  })();
   return settle(() => ({
     id: `${roomId}-self-${Date.now()}`,
-    author,
+    author: '',
     color: '#35b8cf',
     time: '剛剛',
     text,
@@ -100,6 +135,42 @@ export function postMessage(roomId: string, author: string, text: string): Promi
 }
 
 /** 行情是公開資料，不需要金鑰。面板每 3 秒輪詢一次。 */
+export type ThreadSyncResult = { mentions: number; replies: number; mention_errors: number; reply_errors: number };
+export async function syncThread(roomId: string): Promise<ThreadSyncResult> {
+  const response = await fetch(`/api/discussions/${encodeURIComponent(roomId)}/sync`, {
+    method: 'POST', credentials: 'same-origin', headers: bridgeHeaders(),
+  });
+  if (!response.ok) await throwBridgeError(response, '同步 Threads 失敗');
+  const data = await response.json() as { imported: ThreadSyncResult };
+  return data.imported;
+}
+
+export type DiscussionSpace = {
+  id: string; title: string; creator: string; created_at: string; archived: boolean;
+  threads_root_id?: string; threads_deleted_at?: string;
+  source_threads_id?: string; source_permalink?: string;
+};
+export async function listDiscussionSpaces(includeArchived = false): Promise<DiscussionSpace[]> {
+  const response = await fetch(`/api/discussion-spaces?include_archived=${includeArchived}`);
+  if (!response.ok) throw new Error('Unable to load discussion spaces');
+  return ((await response.json()) as { spaces: DiscussionSpace[] }).spaces;
+}
+export async function deleteOfficialThreadsRoot(roomId: string): Promise<void> {
+  const response = await fetch(`/api/admin/discussion-spaces/${encodeURIComponent(roomId)}/delete-threads-root`, {
+    method: 'POST', credentials: 'same-origin', headers: bridgeHeaders(), body: JSON.stringify({ confirmation: 'DELETE' }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { detail?: string };
+    throw new Error(body.detail ?? 'Unable to delete official Threads post');
+  }
+}
+export async function syncThreadsMentions(): Promise<{ created: number; errors: number; busy: boolean }> {
+  const response = await fetch('/api/threads/sync-mentions', { method: 'POST', credentials: 'same-origin', headers: bridgeHeaders() });
+  if (!response.ok) await throwBridgeError(response, '同步 @MAIA 話題失敗');
+  const data = await response.json() as { created: number; errors: number; busy?: number };
+  return { created: data.created, errors: data.errors, busy: data.busy === 1 };
+}
+
 export function getMarkets(quote: Quote): Promise<Market[]> {
   return settle(
     () => mock.driftMarkets().filter((m) => m.quote === quote).sort((a, b) => b.volume - a.volume),
