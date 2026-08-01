@@ -243,3 +243,24 @@ def test_endpoint_never_exposes_the_login_account(api):
         assert "sync_error" not in post
         assert "raw_text" not in post
     assert bridge.list_posts("room")[-1]["username"] == "alice"   # DB 裡有，只是不外流
+
+
+def test_publish_retries_threads_container_readiness_race(monkeypatch):
+    calls = []
+    sleeps = []
+
+    def fake_api(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        if path == "/me/threads":
+            return {"id": "container-1"}
+        if len([call for call in calls if call[1] == "/me/threads_publish"]) < 3:
+            raise RuntimeError('Threads API HTTP 400: {"error_subcode":4279009}')
+        return {"id": "thread-1"}
+
+    monkeypatch.setattr(bridge, "_api", fake_api)
+    monkeypatch.setattr(bridge.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    result = bridge.publish_platform_post("Alice", "hello")
+
+    assert result["threads_id"] == "thread-1"
+    assert sleeps == [1, 2]

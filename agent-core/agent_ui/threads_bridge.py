@@ -377,7 +377,21 @@ def publish_platform_post(author: str, text: str, reply_to_id: str | None = None
     creation_id = creation.get("id")
     if not creation_id:
         raise RuntimeError("Threads did not return a creation id")
-    published = _api("POST", "/me/threads_publish", data={"creation_id": creation_id})
+    # Threads containers are eventually consistent. Publishing immediately can
+    # return subcode 4279009 (container/media not found) even though creation
+    # succeeded. Retry only that known readiness race; other API errors remain
+    # fail-fast so invalid tokens and permissions are not hidden.
+    published = None
+    for attempt in range(5):
+        try:
+            published = _api("POST", "/me/threads_publish", data={"creation_id": creation_id})
+            break
+        except RuntimeError as exc:
+            message = str(exc)
+            if "4279009" not in message or attempt == 4:
+                raise
+            time.sleep(attempt + 1)
+    assert published is not None
     thread_id = published.get("id")
     if not thread_id:
         raise RuntimeError("Threads did not return a post id")
