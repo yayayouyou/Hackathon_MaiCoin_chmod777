@@ -515,6 +515,25 @@
   .maia-approval-btns { display: flex; gap: 6px; margin-top: 8px; }
   .maia-approval-btns .btn { flex: 1; font-size: 12px; }
 
+  /* 依據列（provenance）：可展開，逐筆來源色編碼 + 關鍵數值 */
+  .maia-prov-head {
+    font-family: var(--mono); font-size: 10px; color: var(--dim);
+    background: none; border: 0; padding: 2px 0; cursor: pointer;
+  }
+  .maia-prov-head:hover { color: var(--txt); }
+  .maia-prov-body { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; }
+  .maia-prov-item {
+    display: flex; flex-direction: column; gap: 1px;
+    padding: 3px 8px; font-size: 10px;
+    background: #0d1420; border-left: 2px solid var(--line);
+  }
+  .maia-prov-item[data-src='max']    { border-left-color: var(--max); }
+  .maia-prov-item[data-src='dna']    { border-left-color: var(--violet); }
+  .maia-prov-item[data-src='market'] { border-left-color: var(--cyan); }
+  .maia-prov-item[data-src='news']   { border-left-color: var(--amber); }
+  .maia-prov-tool { color: var(--txt); font-weight: 600; }
+  .maia-prov-detail { color: var(--dim); font-family: var(--mono); }
+
   /* reader 注入攔截警示：rose 色調，跟核准卡（琥珀）區隔開來 */
   .maia-reader {
     padding: 10px;

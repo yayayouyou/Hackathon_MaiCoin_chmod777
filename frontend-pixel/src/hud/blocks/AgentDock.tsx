@@ -12,6 +12,7 @@ import {
   toolSource,
   useChat,
   type ChartItem,
+  type ProvItem,
 } from '../../ui/chatStore';
 import { renderMarkdown } from '../../ui/markdown';
 import { chartSpecFor, Disclaimer, planAgentBody } from '../../ui/vizCards';
@@ -36,6 +37,28 @@ function renderAgentBody(text: string, charts: ChartItem[]): ReactNode {
         ) : null;
       })}
     </>
+  );
+}
+
+/** 答案下方可展開的「依據」列：這輪查過哪些資料來源 + 關鍵數值（來源色編碼）。 */
+function Provenance({ items }: { items: ProvItem[] }): ReactNode {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="maia-prov">
+      <button className="maia-prov-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        {open ? '▾' : '▸'} 依據 · {items.length} 項資料來源
+      </button>
+      {open && (
+        <div className="maia-prov-body">
+          {items.map((p) => (
+            <div key={p.id} className="maia-prov-item" data-src={p.source}>
+              <span className="maia-prov-tool">{toolLabel(p.tool)}</span>
+              {p.detail && <span className="maia-prov-detail">{p.detail}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -346,6 +369,7 @@ export function AgentDock() {
               ) : (
                 <div className="chat-msg chat-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
               )}
+              {m.provenance && m.provenance.length > 0 && <Provenance items={m.provenance} />}
               {m.tools && <Disclaimer tools={m.tools} />}
             </div>
           ),

@@ -23,13 +23,22 @@ import { hud, type SourceTag, type ToolStep } from '../hud/channels';
  * 通道，由 dock 直接寫 `ref.textContent`，收完（final_answer）才進歷史。
  */
 
-/** charts：本輪圖表卡快照（嵌入 + 重播）；tools：本輪用到的工具名（給分級免責）。 */
-export type Msg = { id: number; who: 'agent' | 'me'; text: string; charts?: ChartItem[]; tools?: string[] };
+/** charts：圖表卡快照；tools：工具名（給免責）；provenance：依據列（可展開的來源明細）。 */
+export type Msg = {
+  id: number;
+  who: 'agent' | 'me';
+  text: string;
+  charts?: ChartItem[];
+  tools?: string[];
+  provenance?: ProvItem[];
+};
 export type Chip = { id: number; name: string; source: SourceTag; ok: boolean | null };
 /** reader 攔截到疑似指令注入時留下的常駐警示（來源工具 + 命中的旗標名）。 */
 export type ReaderAlert = { id: number; source: string; flags: string[] };
 /** 一張圖表卡：留住 tool_result 的原始 result + 當初 tool_call 的 args（給卡片標題/去重用）。 */
 export type ChartItem = { id: number; tool: string; result: unknown; args?: Record<string, unknown> };
+/** 一筆「依據」：這輪查過的資料來源 + 關鍵數值摘要（答案下方可展開）。 */
+export type ProvItem = { id: number; tool: string; source: SourceTag; detail: string };
 
 export type ChatState = {
   msgs: Msg[];
@@ -39,6 +48,7 @@ export type ChatState = {
   approval: { summary: string; hash: string; token: string } | null;
   readerAlerts: ReaderAlert[];
   charts: ChartItem[];
+  provenance: ProvItem[];
 };
 
 const GREETING: Msg = {
@@ -55,6 +65,7 @@ let state: ChatState = {
   approval: null,
   readerAlerts: [],
   charts: [],
+  provenance: [],
 };
 
 const subs = new Set<() => void>();
@@ -149,6 +160,22 @@ function marketOf(tool: string, result: unknown, args?: Record<string, unknown>)
   return tool; // 沒有標的的工具（帳戶/DNA/淨值…）→ 用工具名當鍵，同工具留最新一張
 }
 
+/** 從 tool_result 萃取「關鍵數值」摘要，供依據列展開顯示（取前幾個純量欄位）。 */
+export function summarizeResult(result: unknown): string {
+  if (result == null) return '';
+  if (Array.isArray(result)) return `${result.length} 筆`;
+  if (typeof result === 'object') {
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(result as Record<string, unknown>)) {
+      if (parts.length >= 4) break;
+      if (typeof v === 'number' || typeof v === 'boolean') parts.push(`${k}: ${v}`);
+      else if (typeof v === 'string' && v.length > 0 && v.length <= 24) parts.push(`${k}: ${v}`);
+    }
+    return parts.join(' · ');
+  }
+  return String(result).slice(0, 60);
+}
+
 /**
  * 工具是否失敗。後端執行失敗時 tool_result 的 result 會是 `{ error: ... }`
  * （見 agent/ollama_agent.py:303,315）。過去前端一律當成功、把失敗吞掉。
@@ -211,6 +238,7 @@ export async function ask(question: string, model?: string): Promise<void> {
     approval: null,
     readerAlerts: [],
     charts: [],
+    provenance: [],
     busy: true,
   });
   pushHud('thinking', '讀題中…');
@@ -263,6 +291,18 @@ export async function ask(question: string, model?: string): Promise<void> {
             patch.charts = [...state.charts, item];
           }
         }
+        // 依據列：每個成功的工具都留一筆來源摘要（不限可畫圖的）
+        if (ok && e.result != null) {
+          patch.provenance = [
+            ...state.provenance,
+            {
+              id: state.provenance.length,
+              tool: e.name,
+              source: toolSource(e.name),
+              detail: summarizeResult(e.result),
+            },
+          ];
+        }
         if (Object.keys(patch).length > 0) emit(patch);
         pushHud('tool', toolLabel(e.name));
         break;
@@ -297,13 +337,22 @@ export async function ask(question: string, model?: string): Promise<void> {
         // 把本輪的圖表卡快照 + 用到的工具名寫進這則訊息（嵌入 [圖表] 錨點 + 重播 + 分級免責），清空 live
         const turnCharts = state.charts;
         const turnTools = state.chips.map((c) => c.name);
+        const turnProv = state.provenance;
         setLive('');
         emit({
           msgs: [
             ...state.msgs,
-            { id: Date.now(), who: 'agent', text: e.content, charts: turnCharts, tools: turnTools },
+            {
+              id: Date.now(),
+              who: 'agent',
+              text: e.content,
+              charts: turnCharts,
+              tools: turnTools,
+              provenance: turnProv,
+            },
           ],
           charts: [],
+          provenance: [],
         });
         break;
       }
@@ -330,10 +379,15 @@ export async function ask(question: string, model?: string): Promise<void> {
       const t = live;
       const turnCharts = state.charts;
       const turnTools = state.chips.map((c) => c.name);
+      const turnProv = state.provenance;
       setLive('');
       emit({
-        msgs: [...state.msgs, { id: Date.now(), who: 'agent', text: t, charts: turnCharts, tools: turnTools }],
+        msgs: [
+          ...state.msgs,
+          { id: Date.now(), who: 'agent', text: t, charts: turnCharts, tools: turnTools, provenance: turnProv },
+        ],
         charts: [],
+        provenance: [],
       });
     }
   } catch (err) {
@@ -359,7 +413,16 @@ export function newConversation(): void {
   cancel();
   currentSessionId = newSessionId();
   setLive('');
-  emit({ msgs: [GREETING], chips: [], status: '', approval: null, readerAlerts: [], charts: [], busy: false });
+  emit({
+    msgs: [GREETING],
+    chips: [],
+    status: '',
+    approval: null,
+    readerAlerts: [],
+    charts: [],
+    provenance: [],
+    busy: false,
+  });
 }
 
 /**
@@ -383,12 +446,15 @@ export async function loadSessionInto(id: string): Promise<void> {
     const tools = turn.steps
       .filter((s): s is Extract<ReplayStep, { type: 'tool_call' }> => s.type === 'tool_call')
       .map((s) => s.name);
+    const provenance: ProvItem[] = turn.steps
+      .filter((s): s is Extract<ReplayStep, { type: 'tool_result' }> => s.type === 'tool_result')
+      .map((s, i) => ({ id: i, tool: s.name, source: toolSource(s.name), detail: summarizeResult(s.result) }));
     if (fa && fa.type === 'final_answer')
-      msgs.push({ id: mid++, who: 'agent', text: fa.content, charts, tools });
+      msgs.push({ id: mid++, who: 'agent', text: fa.content, charts, tools, provenance });
   }
   currentSessionId = id;
   setLive('');
-  emit({ msgs, chips: [], status: '', approval: null, readerAlerts: [], charts: [], busy: false });
+  emit({ msgs, chips: [], status: '', approval: null, readerAlerts: [], charts: [], provenance: [], busy: false });
 }
 
 /** 核准這筆待核准下單：打後端執行，結果以一則訊息呈現，並清掉核准卡。 */
