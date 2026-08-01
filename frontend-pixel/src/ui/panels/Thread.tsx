@@ -6,6 +6,35 @@ import { useAsync } from '../useAsync';
 import { Panel, AsyncState } from '../Panel';
 import { toggleFavorite, useUI } from '../uiStore';
 
+type ThreadItem = { post: Post; depth: number; parent?: Post };
+
+function orderThreadPosts(posts: Post[]): ThreadItem[] {
+  const byId = new Map(posts.map((post) => [post.id, post]));
+  const children = new Map<string, Post[]>();
+  const roots: Post[] = [];
+  for (const post of posts) {
+    if (post.parentPostId && byId.has(post.parentPostId)) {
+      const siblings = children.get(post.parentPostId) ?? [];
+      siblings.push(post);
+      children.set(post.parentPostId, siblings);
+    } else {
+      roots.push(post);
+    }
+  }
+  const ordered: ThreadItem[] = [];
+  const visited = new Set<string>();
+  const visit = (post: Post, depth: number, parent?: Post) => {
+    if (visited.has(post.id)) return;
+    visited.add(post.id);
+    ordered.push({ post, depth, parent });
+    for (const child of children.get(post.id) ?? []) visit(child, depth + 1, post);
+  };
+  for (const root of roots) visit(root, 0);
+  // Retain malformed or cyclic legacy records instead of hiding them.
+  for (const post of posts) visit(post, 0);
+  return ordered;
+}
+
 export function Thread() {
   const { roomId, roomTitle, nickname, favorites } = useUI();
   const { data, loading, error, reload } = useAsync(() => getThread(roomId ?? ''), [roomId]);
@@ -30,6 +59,7 @@ export function Thread() {
   }, [roomId]);
 
   const posts = [...(data ?? []), ...extra];
+  const orderedPosts = orderThreadPosts(posts);
   const fav = roomId !== null && favorites.includes(roomId);
 
   const send = async () => {
@@ -112,8 +142,12 @@ export function Thread() {
             </span>
           </div>}
           <div className="thread">
-            {posts.map((p) => (
-              <div className={`post${p.self ? ' self' : ''}`} key={p.id}>
+            {orderedPosts.map(({ post: p, depth, parent }) => (
+              <div
+                className={`post${p.self ? ' self' : ''}`}
+                key={p.id}
+                style={depth ? { marginLeft: Math.min(depth, 4) * 28, borderLeft: '2px solid var(--line)', paddingLeft: 12 } : undefined}
+              >
                 <span className="av" style={{ background: p.color }} />
                 <span>
                   <span className="meta">
@@ -124,7 +158,7 @@ export function Thread() {
                     <span className="muted">♥ {p.likes}</span>
                   </span>
                   <span className="body">{p.text}</span>
-                  {p.parentPostId && <span className="muted">↳ 回覆討論串中的留言</span>}
+                  {parent && <span className="muted">↳ 回覆 @{parent.sourceAuthor ?? parent.author}</span>}
                   <button className="chip" onClick={() => setReplyTo(p)}>回覆</button>
                 </span>
               </div>
