@@ -12,6 +12,7 @@ import time
 import secrets
 import threading
 import requests
+from dotenv import load_dotenv
 from loguru import logger
 from fastapi import FastAPI, Request, Depends, Header, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, Response
@@ -19,6 +20,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+
+# Local/demo launches commonly invoke uvicorn directly. Load the project
+# configuration before importing modules that choose their storage backend.
+# Existing deployment environment variables keep precedence.
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 
 # 將專案根路徑加入 sys.path 以便加載 skills 與 agent 模組
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

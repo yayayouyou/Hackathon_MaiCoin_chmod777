@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 from agent_ui.threads_bridge import list_posts, list_spaces
 
 TAIPEI = ZoneInfo("Asia/Taipei")
-PROMPT_VERSION = "community-daily-v1"
+PROMPT_VERSION = "community-today-v2"
 _STORE = Path(os.getenv("COMMUNITY_INSIGHTS_STORE_PATH", "agent_memory/community_insights.json"))
 _LOCK = threading.Lock()
 _GENERATION_LOCK = threading.Lock()
