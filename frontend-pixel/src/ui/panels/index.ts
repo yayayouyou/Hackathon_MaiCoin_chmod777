@@ -12,6 +12,7 @@ import { ThreadsAdmin } from './ThreadsAdmin';
 import { Holdings } from './Holdings';
 import { PnlDesk } from './PnlDesk';
 import { Behavior } from './Behavior';
+import { CommunityBrief } from './CommunityBrief';
 
 /**
  * ★ 全隊 append 點 2/4。
@@ -37,6 +38,7 @@ export const PANELS = {
   holdings: definePanel({ id: 'holdings', title: '我的金庫', Component: Holdings }),
   pnlDesk: definePanel({ id: 'pnlDesk', title: '損益對帳台', Component: PnlDesk }),
   behavior: definePanel({ id: 'behavior', title: '交易性格', Component: Behavior }),
+  communityBrief: definePanel({ id: 'communityBrief', title: '昨日全站社群焦點', Component: CommunityBrief }),
 } as const satisfies Record<string, PanelDef>;
 
 export type PanelId = keyof typeof PANELS;

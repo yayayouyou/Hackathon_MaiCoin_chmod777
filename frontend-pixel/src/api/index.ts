@@ -175,6 +175,46 @@ function failIfFlagged(): void {
   if (FLAGS.failApi) throw new Error('連線失敗，請稍後再試');
 }
 
+export type CommunityInsight = {
+  scope: 'room' | 'lobby';
+  room_id?: string | null;
+  date: string;
+  title: string;
+  headline: string;
+  summary: string;
+  directions: Array<{ topic: string; why_it_matters: string }>;
+  disagreements: string[];
+  sentiment: number;
+  post_count: number;
+  room_count?: number;
+  rooms?: Array<{ room_id: string; title: string; headline: string }>;
+  generated_at: string;
+  model: string;
+};
+
+async function getCommunityInsight(path: string): Promise<CommunityInsight | null> {
+  const response = await fetch(path, { credentials: 'same-origin' });
+  if (response.status === 404) return null;
+  if (!response.ok) await throwBridgeError(response, '無法讀取社群洞察');
+  return ((await response.json()) as { insight: CommunityInsight }).insight;
+}
+
+export function getRoomCommunityInsight(roomId: string): Promise<CommunityInsight | null> {
+  return getCommunityInsight(`/api/community-insights/rooms/${encodeURIComponent(roomId)}`);
+}
+
+export function getLobbyCommunityInsight(): Promise<CommunityInsight | null> {
+  return getCommunityInsight('/api/community-insights/lobby');
+}
+
+export async function generateCommunityInsights(): Promise<{ date: string; rooms: number }> {
+  const response = await fetch('/api/admin/community-insights/generate', {
+    method: 'POST', credentials: 'same-origin', headers: bridgeHeaders(),
+  });
+  if (!response.ok) await throwBridgeError(response, '昨日社群洞察產生失敗');
+  return response.json() as Promise<{ date: string; rooms: number }>;
+}
+
 /** 行情是公開資料，不需要登入。面板每 3 秒輪詢一次。 */
 export async function getMarkets(quote: Quote, signal?: AbortSignal): Promise<Market[]> {
   failIfFlagged();

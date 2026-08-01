@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { archiveDiscussionSpace, getThread, postMessage, syncThread } from '../../api';
+import { archiveDiscussionSpace, getRoomCommunityInsight, getThread, postMessage, syncThread } from '../../api';
 import { me } from '../../api/auth';
 import type { Post } from '../../api/types';
 import { useAsync } from '../useAsync';
 import { Panel, AsyncState } from '../Panel';
 import { toggleFavorite, useUI } from '../uiStore';
+import { CommunityInsightCard } from './CommunityInsightCard';
 
 type ThreadItem = { post: Post; depth: number; parent?: Post };
 
@@ -38,6 +39,7 @@ function orderThreadPosts(posts: Post[]): ThreadItem[] {
 export function Thread() {
   const { roomId, roomTitle, nickname, favorites } = useUI();
   const { data, loading, error, reload } = useAsync(() => getThread(roomId ?? ''), [roomId]);
+  const { data: dailyInsight } = useAsync(() => roomId ? getRoomCommunityInsight(roomId) : Promise.resolve(null), [roomId]);
   const { data: player } = useAsync(() => me(), []);
   const [extra, setExtra] = useState<Post[]>([]);
   const [text, setText] = useState('');
@@ -121,6 +123,7 @@ export function Thread() {
       {data && (
         <>
           {actionMessage && <p className="muted" role="status" style={{ fontSize: 12, marginBottom: 10 }}>{actionMessage}</p>}
+          {dailyInsight && <CommunityInsightCard insight={dailyInsight} compact />}
           <div
             style={{
               display: 'flex',

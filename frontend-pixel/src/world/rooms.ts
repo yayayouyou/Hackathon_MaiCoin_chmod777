@@ -2,7 +2,7 @@ import { RECOLORS } from '../art/palette';
 import { finish } from '../engine/kit';
 import { door, doorPortals, doorProps } from '../engine/doors';
 import { assemble, seats, station } from '../engine/parts';
-import type { Accent, Prop, Room } from './types';
+import type { Accent, Interactable, Prop, Room } from './types';
 
 /**
  * 兩個房間的建構函式，被 `world/zones/{lobby,discussion}/index.ts` 呼叫。
@@ -300,6 +300,14 @@ export function makeLobby(): Room {
   ];
 
   const built = assemble([...stations, ...seating]);
+  // Reuse the large MAIA screenwall as the lobby entry for the generated
+  // all-room community brief.  It already has a clear visual presence, so the
+  // feature does not add another solid object or disturb existing walk paths.
+  const communityBriefBoard: Interactable = {
+    label: '查看昨日全站社群焦點',
+    panel: 'communityBrief',
+    rect: { x: 352, y: 94, w: 160, h: 70 },
+  };
 
   return finish({
     id: 'lobby',
@@ -338,7 +346,7 @@ export function makeLobby(): Room {
     ],
     props: [...decor, ...built.props, ...doorProps(doors)],
     portals: doorPortals(doors),
-    interactables: built.interactables,
+    interactables: [...built.interactables, communityBriefBoard],
     // NPC 擺在有事情發生的地方 —— 門廊附近等傳送、圍著圓桌盯盤、
     // 在客服前排隊。散在空地上只會像放置的模型。
     npcs: [

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { deleteOfficialThreadsRoot, listDiscussionSpaces, syncThreadsMentions } from '../../api';
+import { deleteOfficialThreadsRoot, generateCommunityInsights, listDiscussionSpaces, syncThreadsMentions } from '../../api';
 import { me } from '../../api/auth';
 import { AsyncState, Panel } from '../Panel';
 import { useAsync } from '../useAsync';
@@ -10,6 +10,7 @@ export function ThreadsAdmin() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [generatingInsights, setGeneratingInsights] = useState(false);
   const removeRemote = async (id: string, title: string) => {
     if (busy || !window.confirm(`確定永久刪除「${title}」的 MAIA 官方 Threads 貼文？\n\n不會刪除任何外部使用者的原始貼文。`)) return;
     setBusy(id); setMessage('');
@@ -27,10 +28,23 @@ export function ThreadsAdmin() {
     } catch (error) { setMessage(`同步失敗：${error instanceof Error ? error.message : '未知錯誤'}`); }
     finally { setSyncing(false); }
   };
+  const generateInsights = async () => {
+    if (generatingInsights) return;
+    setGeneratingInsights(true); setMessage('');
+    try {
+      const result = await generateCommunityInsights();
+      setMessage(`${result.date} 社群洞察已產生：${result.rooms} 個討論區與 1 份全站總覽。`);
+    } catch (error) {
+      setMessage(`社群洞察產生失敗：${error instanceof Error ? error.message : '未知錯誤'}`);
+    } finally { setGeneratingInsights(false); }
+  };
   return <Panel title="MAIA 官方社群管理" size="md">
     {player?.role !== 'official' ? <p className="muted">此功能限官方帳號使用。</p> : <>
     <p className="muted" style={{ fontSize: 12 }}>官方專用。一般封存不會刪 Threads；此頁的刪除不可復原。</p>
     <button className="btn btn-primary" disabled={syncing} onClick={() => void syncMentions()}>{syncing ? '同步中…' : '同步 @MAIA 新話題'}</button>
+    <button className="btn" style={{ marginLeft: 8 }} disabled={generatingInsights} onClick={() => void generateInsights()}>
+      {generatingInsights ? '整理昨日討論中…' : '產生昨日社群洞察'}
+    </button>
     {message && <p className="muted" style={{ fontSize: 12 }}>{message}</p>}
     <AsyncState loading={loading} error={error} onRetry={reload} />
     {data?.map((space) => <div key={space.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid var(--line)', padding: '12px 0' }}>

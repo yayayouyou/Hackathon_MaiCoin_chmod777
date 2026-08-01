@@ -59,6 +59,8 @@ def get_service_worker():
 _APPROVAL_SECRET = secrets.token_urlsafe(24)
 _THREADS_SYNC_STOP = threading.Event()
 _THREADS_SYNC_THREAD: Optional[threading.Thread] = None
+_INSIGHTS_STOP = threading.Event()
+_INSIGHTS_THREAD: Optional[threading.Thread] = None
 
 
 def _threads_sync_interval() -> int:
@@ -67,6 +69,15 @@ def _threads_sync_interval() -> int:
         return max(60, int(raw))
     except ValueError:
         logger.warning("THREADS_SYNC_INTERVAL_SECONDS={!r} is invalid; using 300 seconds", raw)
+        return 300
+
+
+def _community_insights_check_interval() -> int:
+    raw = os.getenv("COMMUNITY_INSIGHTS_CHECK_INTERVAL_SECONDS", "300")
+    try:
+        return max(60, int(raw))
+    except ValueError:
+        logger.warning("COMMUNITY_INSIGHTS_CHECK_INTERVAL_SECONDS={!r} is invalid; using 300 seconds", raw)
         return 300
 
 
@@ -85,6 +96,22 @@ def _threads_auto_sync_loop() -> None:
             break
 
 
+def _community_insights_auto_loop() -> None:
+    """Generate the previous Taipei day's insight once, retrying after failures."""
+    interval = _community_insights_check_interval()
+    while not _INSIGHTS_STOP.is_set():
+        try:
+            from agent_ui.community_insights import generate_daily_insights, yesterday_taipei
+            # The generator compares source counts and is a no-op when nothing
+            # changed.  This also repairs the startup race where a Threads sync
+            # finishes just after an initially empty daily insight was stored.
+            generate_daily_insights(yesterday_taipei())
+        except Exception:
+            logger.exception("Community insight generation failed; will retry later")
+        if _INSIGHTS_STOP.wait(interval):
+            break
+
+
 @app.on_event("startup")
 def start_threads_auto_sync() -> None:
     global _THREADS_SYNC_THREAD
@@ -97,9 +124,26 @@ def start_threads_auto_sync() -> None:
     _THREADS_SYNC_THREAD.start()
 
 
+@app.on_event("startup")
+def start_community_insights_auto_generation() -> None:
+    global _INSIGHTS_THREAD
+    if os.getenv("COMMUNITY_INSIGHTS_AUTO_GENERATE", "false").strip().lower() not in {"1", "true", "yes"}:
+        return
+    if _INSIGHTS_THREAD and _INSIGHTS_THREAD.is_alive():
+        return
+    _INSIGHTS_STOP.clear()
+    _INSIGHTS_THREAD = threading.Thread(
+        target=_community_insights_auto_loop,
+        name="community-insights-auto-generation",
+        daemon=True,
+    )
+    _INSIGHTS_THREAD.start()
+
+
 @app.on_event("shutdown")
 def stop_threads_auto_sync() -> None:
     _THREADS_SYNC_STOP.set()
+    _INSIGHTS_STOP.set()
 
 
 def _require_approval_secret(x_approval_secret: Optional[str] = Header(default=None)) -> None:
@@ -1280,6 +1324,45 @@ def sync_threads_mentions(_: str = Depends(auth.require_official)):
         return {"ok": True, **sync_mentions_to_spaces()}
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/community-insights/lobby")
+def get_lobby_community_insight(date: Optional[str] = None):
+    """Return the generated all-room insight for one Taipei calendar day."""
+    from agent_ui.community_insights import get_insight
+    try:
+        insight = get_insight("lobby", date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not insight:
+        raise HTTPException(status_code=404, detail="community insight has not been generated yet")
+    return {"insight": insight}
+
+
+@app.get("/api/community-insights/rooms/{room_id}")
+def get_room_community_insight(room_id: str, date: Optional[str] = None):
+    """Return one discussion space's generated daily insight."""
+    from agent_ui.community_insights import get_insight
+    try:
+        insight = get_insight("room", date, room_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not insight:
+        raise HTTPException(status_code=404, detail="community insight has not been generated yet")
+    return {"insight": insight}
+
+
+@app.post("/api/admin/community-insights/generate")
+def generate_community_insights(date: Optional[str] = None, _: str = Depends(auth.require_official)):
+    """Generate room insights first, then the lobby roll-up; official accounts only."""
+    from agent_ui.community_insights import generate_daily_insights
+    try:
+        return {"ok": True, **generate_daily_insights(date, force=True)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        status = 409 if "already running" in str(exc) else 502
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
 
 
 @app.post("/api/admin/discussion-spaces/{room_id}/delete-threads-root")
