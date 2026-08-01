@@ -89,6 +89,13 @@ class ExportRequest(BaseModel):
     symbol: str = "BTC/USDT"
     backtest_result: Optional[Dict[str, Any]] = None   # csv 匯出需帶上一次回測結果
 
+
+class ReportUploadRequest(BaseModel):
+    """要保存到 S3 的 MAIA 分析快照。"""
+    title: str
+    report: Dict[str, Any]
+    source: str = "maia-demo"
+
 @app.get("/", response_class=HTMLResponse)
 def get_index():
     """載入精美的前端聊天介面 HTML"""
@@ -615,6 +622,67 @@ def export_strategy_endpoint(req: ExportRequest):
     """匯出策略：format='pine' → TradingView Pine Script v6；'csv' → 交易明細 CSV。"""
     from skills.analytics.strategy_export import export_strategy
     return export_strategy(req.strategy_name, req.params, req.format, req.symbol, req.backtest_result)
+
+
+@app.post("/api/reports/upload")
+def upload_report_to_s3(
+    req: ReportUploadRequest,
+    _: None = Depends(_require_approval_secret),
+):
+    """將一份分析報告私有保存至 S3，並回傳 15 分鐘有效的下載連結。
+
+    S3 bucket 必須由 ``S3_REPORTS_BUCKET`` 指定。端點需要與下單相同的
+    same-origin approval secret，避免公開部署後被任意使用者拿來寫入 bucket。
+    """
+    bucket = (os.getenv("S3_REPORTS_BUCKET") or "").strip()
+    if not bucket:
+        raise HTTPException(status_code=503, detail="尚未設定 S3_REPORTS_BUCKET")
+
+    try:
+        import boto3
+        from botocore.exceptions import BotoCoreError, ClientError
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail="S3 功能需要 boto3") from exc
+
+    now = time.gmtime()
+    key = (
+        f"reports/{time.strftime('%Y/%m/%d', now)}/"
+        f"maia-{secrets.token_urlsafe(9)}.json"
+    )
+    payload = {
+        "schema_version": 1,
+        "title": req.title[:160],
+        "source": req.source[:80],
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", now),
+        "report": req.report,
+    }
+
+    try:
+        client = boto3.client("s3", region_name=os.getenv("AWS_DEFAULT_REGION") or None)
+        client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            ContentType="application/json; charset=utf-8",
+            ContentDisposition="attachment; filename=maia-report.json",
+            ServerSideEncryption="AES256",
+        )
+        url = client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=900,
+        )
+    except (BotoCoreError, ClientError) as exc:
+        logger.exception("S3 報告上傳失敗")
+        raise HTTPException(status_code=502, detail="S3 報告上傳失敗") from exc
+
+    return {
+        "ok": True,
+        "bucket": bucket,
+        "key": key,
+        "download_url": url,
+        "expires_in_seconds": 900,
+    }
 
 
 @app.post("/api/approve_order")

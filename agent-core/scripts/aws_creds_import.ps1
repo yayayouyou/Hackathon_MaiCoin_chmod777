@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     把黑客松給的臨時 AWS 憑證匯入本機（寫成 ~/.aws 的具名 profile），供 AWS CLI 與 boto3 共用。
 
