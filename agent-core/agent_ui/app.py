@@ -29,6 +29,7 @@ os.environ.setdefault("ROUTING_LOG", "1")
 from agent.ollama_agent import run_agent_turn
 from agent.ollama_config import resolve_host, resolve_auth, DEFAULT_OLLAMA_HOST
 from agent.personas import list_personas
+from agent_ui import auth, discussion, store
 
 app = FastAPI(title="MAIA · MAX AI Trading Copilot")
 
@@ -95,6 +96,29 @@ class ReportUploadRequest(BaseModel):
     title: str
     report: Dict[str, Any]
     source: str = "maia-demo"
+
+
+class AuthRequest(BaseModel):
+    """註冊／登入。"""
+    username: str
+    password: str
+
+
+class PostRequest(BaseModel):
+    """討論室發文。
+
+    刻意只有 text —— 作者與角色由後端從 session 取，不接受前端指定。多一個 author
+    欄位就等於讓任何人都能冒名發文，或把自己的發言標成官方。
+    """
+    text: str
+
+
+class ProgressRequest(BaseModel):
+    """世界進度。四欄都可選 —— 前端改暱稱時不該被迫連收藏一起送。"""
+    nickname: Optional[str] = None
+    character: Optional[str] = None
+    stance: Optional[str] = None
+    favorites: Optional[List[str]] = None
 
 @app.get("/", response_class=HTMLResponse)
 def get_index():
@@ -169,6 +193,146 @@ def get_config():
     }
 
 
+# ══════════════════════ 玩家帳號 ══════════════════════
+# session cookie 成立的前提是**前後端同源**（開發走 vite 的 /api proxy，部署走
+# CloudFront 的 /api/* behavior）。跨源會需要 SameSite=None + CORS，而
+# tests/test_app_security.py 有一條測試明文擋著 CORSMiddleware —— 那不是疏漏，
+# 是核准端點的 CSRF 防線所依賴的前提。
+
+def _cookie_secure(request: Request) -> bool:
+    """這次回應的 cookie 該不該帶 Secure。
+
+    未設定 MAIA_COOKIE_SECURE 時看請求本身是不是 https —— 本機 http 開發自動關掉
+    （否則瀏覽器根本不會回傳 cookie，症狀是「登入成功但每一次請求都說沒登入」），
+    正式環境走 CloudFront 必為 https 自動打開，不需要任何人記得改設定。
+
+    ⚠️ 後端在反向代理後面時，要用 `uvicorn --proxy-headers` 啟動，
+    `request.url.scheme` 才會反映 X-Forwarded-Proto。
+    """
+    override = os.getenv("MAIA_COOKIE_SECURE", "").strip().lower()
+    if override in ("1", "true", "yes"):
+        return True
+    if override in ("0", "false", "no"):
+        return False
+    return request.url.scheme == "https"
+
+
+def _issue_session(username: str, request: Request, response: Response) -> None:
+    token = auth.new_session_token()
+    store.create_session(token, username, auth.SESSION_TTL_SEC)
+    response.set_cookie(
+        auth.COOKIE_NAME, token,
+        max_age=auth.SESSION_TTL_SEC,
+        httponly=True,                       # JS 讀不到 → XSS 偷不走 session
+        secure=_cookie_secure(request),
+        samesite="lax",
+        path="/",
+    )
+
+
+@app.post("/api/auth/register")
+def auth_register(req: AuthRequest, request: Request, response: Response):
+    """註冊並直接登入。"""
+    username = auth.normalize_username(req.username)
+    auth.validate_credentials(username, req.password)
+
+    pw_hash, salt, iterations = auth.hash_password(req.password)
+    created = store.create_player({
+        "username": username,
+        "password_hash": pw_hash,
+        "salt": salt,
+        "iterations": iterations,
+        "created_at": store.now_iso(),
+        "updated_at": store.now_iso(),
+        "nickname": "", "character": "", "stance": "", "favorites": [],
+        # 註冊一律是一般使用者。官方身分只能由 scripts/grant_official.py 授予
+        "role": auth.ROLE_USER,
+    })
+    if not created:
+        raise HTTPException(status_code=409, detail="這個帳號已經有人用了。")
+
+    _issue_session(username, request, response)
+    return {"player": auth.public_player(store.get_player(username) or {})}
+
+
+@app.post("/api/auth/login")
+def auth_login(req: AuthRequest, request: Request, response: Response):
+    username = auth.normalize_username(req.username)
+    player = store.get_player(username)
+    # 帳號不存在與密碼錯誤回同一句話：分開講等於送給對方一支帳號列舉工具
+    if not player or not auth.verify_password(req.password, player):
+        raise HTTPException(status_code=401, detail="帳號或密碼不正確。")
+
+    _issue_session(username, request, response)
+    return {"player": auth.public_player(player)}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request, response: Response):
+    """登出。沒登入也回 200 —— 登出是冪等的，對已經登出的人報錯沒有意義。"""
+    token = request.cookies.get(auth.COOKIE_NAME)
+    if token:
+        store.delete_session(token)
+    response.delete_cookie(auth.COOKIE_NAME, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def auth_me(username: str = Depends(auth.require_session)):
+    """目前登入的玩家與世界進度。未登入回 401（前端據此決定要不要顯示登入畫面）。"""
+    player = store.get_player(username)
+    if not player:
+        # session 有效但玩家被刪了。這是不一致狀態，當作未登入處理
+        raise HTTPException(status_code=401, detail="找不到這個帳號。")
+    return {"player": auth.public_player(player)}
+
+
+@app.put("/api/auth/progress")
+def auth_progress(req: ProgressRequest, username: str = Depends(auth.require_session)):
+    """儲存世界進度（暱稱／角色／立場／收藏）。"""
+    store.update_progress(username, req.model_dump(exclude_none=True))
+    return {"ok": True}
+
+
+@app.get("/api/discussion/{space_id}/posts")
+def discussion_list(space_id: str, limit: int = 50):
+    """列出討論室貼文（公開，不需登入 —— 沒登入的人也要看得到討論室內容）。"""
+    return {"posts": [_public_post(p) for p in discussion.list_posts(space_id, limit)]}
+
+
+@app.post("/api/discussion/{space_id}/posts")
+def discussion_post(space_id: str, req: PostRequest,
+                    username: str = Depends(auth.require_session)):
+    """發文。登入者都可以發；差別在貼文記下發文者是一般使用者還是官方帳號。
+
+    官方帳號的貼文會被另一條流程同步到 Threads，一般使用者的只留在平台上 ——
+    判斷依據就是這裡寫進去的 author_role。
+    """
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="發文內容不能是空的。")
+
+    # 角色從 DynamoDB 即時查，不從 cookie 或請求主體讀 —— 撤銷官方身分要立即生效
+    player = store.get_player(username)
+    if not player:
+        raise HTTPException(status_code=401, detail="找不到這個帳號。")
+
+    post = discussion.create_post(space_id, username, auth.role_of(player), text)
+    return {"post": _public_post(post)}
+
+
+def _public_post(post: Dict[str, Any]) -> Dict[str, Any]:
+    """挑出可以送到瀏覽器的欄位。白名單，理由同 auth.public_player。"""
+    return {
+        "id": str(post.get("post_key", "")),
+        "author": post.get("author", ""),
+        "author_role": post.get("author_role", auth.ROLE_USER),
+        "text": post.get("text", ""),
+        "created_at": post.get("created_at", ""),
+        "likes": int(post.get("likes", 0) or 0),
+    }
+
+
 @app.get("/api/tickers")
 def get_tickers():
     """
@@ -229,7 +393,7 @@ def _agg_trades(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-@app.get("/api/dashboard")
+@app.get("/api/dashboard", dependencies=[Depends(auth.require_session)])
 def get_dashboard():
     """使用者總覽儀表板：帳戶狀態 + 餘額 + 近期交易統計 + 記憶特質（缺 MAX 金鑰時優雅降級）。"""
     out: Dict[str, Any] = {
@@ -379,7 +543,7 @@ def _mask_addr(a):
 _POS_LOCK = __import__("threading").Lock()
 
 
-@app.get("/api/positions")
+@app.get("/api/positions", dependencies=[Depends(auth.require_session)])
 def positions(sync: int = 0, method: str = "fifo", reward_basis: str = "market"):
     """艙位成本 + 未實現/已實現損益 + 對帳狀態（唯讀、lazy 載入）。
 
@@ -460,7 +624,7 @@ def trading_guard(limit: int = 20):
         return {"error": str(e)}
 
 
-@app.get("/api/account_activity")
+@app.get("/api/account_activity", dependencies=[Depends(auth.require_session)])
 def account_activity():
     """個人帳戶資金動態（唯讀、lazy 載入，不拖慢主儀表板）：入金/出金/互轉合併時間軸 +
     閃兌記錄 + 提幣白名單（地址一律遮蔽中段）。缺金鑰或失敗時回 ok=False 讓前端優雅隱藏。"""
@@ -543,7 +707,9 @@ def get_orderbook(market: str = "btctwd", limit: int = 14):
         return {"error": str(e)[:120], "bids": [], "asks": []}
 
 
-@app.post("/api/chat")
+# 一併關進登入牆：公開網址上的無認證 LLM 端點是實際的帳單風險（每一輪最多 8 步、
+# 每步都是一次 Bedrock 呼叫）。代價是評審要先註冊，約 10 秒。
+@app.post("/api/chat", dependencies=[Depends(auth.require_session)])
 async def chat_endpoint(req: ChatRequest):
     """
     聊天與決策推理端點。使用 Server-Sent Events (SSE) 實時串流大腦的思考與 Tool 執行日誌。
@@ -640,6 +806,7 @@ def upload_report_to_s3(
 
     try:
         import boto3
+        from botocore.config import Config
         from botocore.exceptions import BotoCoreError, ClientError
     except ImportError as exc:
         raise HTTPException(status_code=503, detail="S3 功能需要 boto3") from exc
@@ -658,7 +825,13 @@ def upload_report_to_s3(
     }
 
     try:
-        client = boto3.client("s3", region_name=os.getenv("AWS_DEFAULT_REGION") or None)
+        # 預設會簽出 SigV2 + 全域端點（s3.amazonaws.com）的連結，對非 us-east-1 的 bucket
+        # 會 307 重導；presigned 簽章綁定 host，重導後必然失效 —— 必須指定 s3v4 + 虛擬主機定址。
+        client = boto3.client(
+            "s3",
+            region_name=os.getenv("AWS_DEFAULT_REGION") or None,
+            config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+        )
         client.put_object(
             Bucket=bucket,
             Key=key,
