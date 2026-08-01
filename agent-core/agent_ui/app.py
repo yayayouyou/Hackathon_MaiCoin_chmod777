@@ -146,10 +146,24 @@ def start_community_insights_auto_generation() -> None:
     _INSIGHTS_THREAD.start()
 
 
+@app.on_event("startup")
+def start_strategy_bot_runner() -> None:
+    """策略機器人 paper runner：一支 daemon 迴圈自動評估各 running bot 並模擬成交（全 paper，不下真單）。"""
+    if os.getenv("STRATEGY_BOT_RUNNER", "1").strip().lower() in {"0", "false", "no"}:
+        return
+    from agent import strategy_bots
+    strategy_bots.start_runner()
+
+
 @app.on_event("shutdown")
 def stop_threads_auto_sync() -> None:
     _THREADS_SYNC_STOP.set()
     _INSIGHTS_STOP.set()
+    try:
+        from agent import strategy_bots
+        strategy_bots.stop_runner()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _require_approval_secret(x_approval_secret: Optional[str] = Header(default=None)) -> None:
@@ -1418,6 +1432,72 @@ def reject_order(req: OrderApprovalRequest, _: None = Depends(_require_approval_
     """使用者取消一筆待核准訂單。"""
     from agent import trade_approval as ta
     return ta.reject(req.token)
+
+
+# ── 策略機器人（Paper 模擬盤 MVP）────────────────────────────
+# MVP 刻意全域、免登入：bots 全程 paper（模擬盤、不下真單），沒有真錢風險，
+# 也不觸「一律人工確認」那道實盤安全牆。per-user 歸屬與 live 授權留待後續。
+class BotCreateRequest(BaseModel):
+    name: str
+    strategy_type: str                 # ma_crossover | rsi_reversal
+    params: Optional[Dict[str, Any]] = None
+    market: str = "btctwd"
+    period_minutes: int = 5
+    initial_capital: float = 100_000.0
+
+
+@app.get("/api/bots")
+def list_strategy_bots():
+    from agent import strategy_bots
+    return {"bots": strategy_bots.list_bots()}
+
+
+@app.post("/api/bots")
+def create_strategy_bot(req: BotCreateRequest):
+    from agent import strategy_bots
+    res = strategy_bots.create_bot(
+        name=req.name, strategy_type=req.strategy_type, params=req.params,
+        market=req.market, period_minutes=req.period_minutes, initial_capital=req.initial_capital,
+    )
+    if isinstance(res, dict) and "error" in res:
+        raise HTTPException(status_code=422, detail=res["error"])
+    return {"bot": res}
+
+
+@app.get("/api/bots/{bot_id}")
+def get_strategy_bot(bot_id: str):
+    from agent import strategy_bots
+    bot = strategy_bots.get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="找不到這支策略機器人。")
+    return {"bot": bot}
+
+
+@app.post("/api/bots/{bot_id}/start")
+def start_strategy_bot(bot_id: str):
+    from agent import strategy_bots
+    bot = strategy_bots.start_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="找不到這支策略機器人。")
+    return {"bot": bot}
+
+
+@app.post("/api/bots/{bot_id}/stop")
+def stop_strategy_bot(bot_id: str):
+    from agent import strategy_bots
+    bot = strategy_bots.stop_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="找不到這支策略機器人。")
+    return {"bot": bot}
+
+
+@app.delete("/api/bots/{bot_id}")
+def delete_strategy_bot(bot_id: str):
+    from agent import strategy_bots
+    if not strategy_bots.delete_bot(bot_id):
+        raise HTTPException(status_code=404, detail="找不到這支策略機器人。")
+    return {"ok": True}
+
 
 if __name__ == "__main__":
     import uvicorn

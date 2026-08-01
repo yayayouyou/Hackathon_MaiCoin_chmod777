@@ -29,6 +29,15 @@ export function makeGuildRoom(): Room {
   ];
 
   const stations = [
+    // 中央上方的門面：策略機器人（本房的主題）。用 robot 造型切題，
+    // 放在兩個社群站點之間偏上，中心 x304 對齊出生點正上方，直線可達。
+    station({
+      prop: { kind: 'robot', x: 292, y: 104, accent: 'max' },
+      label: '打造策略機器人',
+      sign: '策略機器人',
+      accent: 'max',
+      panel: 'strategyBots',
+    }),
     station({
       prop: { kind: 'board', x: 152, y: 140 },
       label: '查看熱門排行',
@@ -70,7 +79,7 @@ export function makeGuildRoom(): Room {
 
   return finish({
     id: 'guild',
-    title: '交易者公會',
+    title: '策略機器人',
     w: 608,
     h: 352,
     accent: 'amber',

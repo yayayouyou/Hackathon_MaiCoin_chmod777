@@ -4,14 +4,14 @@ import { openPage, gameState, walkTo } from './lib/harness.mjs';
 export const title = '大廳站點';
 
 /**
- * 大廳五個功能站點：東翼 MAX 官方區的四個（現貨交易 / 公告 / 活動 / 客服）
- * 與中庭的 MAIA。
+ * 大廳的功能站點：東翼北側的 MAX 官方區（現貨交易 / 公告 / 活動）、
+ * 中庭的 MAIA、東翼南側的帳戶三站（綠）。
  *
- * 這一支同時是「主走道淨空」那條排版規則的驗證：五個站點分散在
- * x408..884、y320..460，全部用同一個 `openAt()` 走過去按 E。任何一件裝飾
+ * 這一支同時是「主走道淨空」那條排版規則的驗證：站點分散在
+ * x408..884、y320..466，全部用同一個 `openAt()` 走過去按 E。任何一件裝飾
  * 掉進走道，這裡就會有一條變成「(沒有面板)」—— 因為角色會卡在半路。
  *
- * ⚠ 走位一律用 walkTo（鍵盤）而不是點擊移動。東翼那四個站點在角色出生點的
+ * ⚠ 走位一律用 walkTo（鍵盤）而不是點擊移動。東翼那些站點在角色出生點的
  *   鏡頭下都落在畫面外，而 harness 的 toScreen() 會把點擊夾到畫布邊緣 ——
  *   夾出來的世界座標 (719,320) 剛好在障礙物上，引擎直接拒絕建立移動目標
  *   （target 保持 null），角色一步都不會動。於是這四條長期紅著，看起來像
@@ -45,11 +45,18 @@ export default async function rooms({ browser, ok }) {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
-  // ⚠ y 取 420 而不是站位的 466。客服辦公區的互動範圍是 (760,410,152,60)，
-  //   兩個 y 都在範圍內，但**用滑鼠點**的時候 466 在遠處會被底部功能條蓋住
-  //   （鏡頭跟著角色，世界 y466 換算出來的螢幕座標落在 bar 上），點擊送不進
-  //   畫布。點在範圍上緣，walkTo() 一樣會把人帶到 (836,466) 站定。
-  await openAt(836, 420, 'MAX 官方客服');
+  // ── 東翼南側：帳戶三站（綠）──
+  //
+  // 客服辦公區原本在這一條，已移除讓三站等距攤開。三站在 x594..878、
+  // 互動範圍都是 y422..482，走位 y 取 466 —— 必須在碰撞盒下緣（y448）之外，
+  // 否則腳底盒 (y-9..y) 會壓在道具上，人是擠在側面而不是站在前面。
+  // 它們同時是「攤開之後最東邊那站還走得到」的驗證 —— board 在 x822，
+  // 是全場離出生點最遠的互動點。
+  await openAt(622, 466, '我的金庫');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+
+  await openAt(850, 466, '損益對帳台');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
@@ -85,19 +92,21 @@ export default async function rooms({ browser, ok }) {
   await page.locator('.maia-x').click();
   await page.waitForTimeout(500);
 
-  // 五個站點頭上都要有常駐站牌，而且是名詞（「公告」）不是動詞
+  // 每個站點頭上都要有常駐站牌，而且是名詞（「公告」）不是動詞
   // （「讀取官方消息」）—— 遠遠一眼要看得出那是什麼。
   const signs = await page.locator('#world-labels .spot-label').allTextContents();
-  ok('五個站點都有常駐站牌',
-    ['現貨交易', '公告', '活動', '客服', 'MAIA'].every((s) => signs.includes(s)),
+  ok('每個站點都有常駐站牌',
+    ['現貨交易', '公告', '活動', 'MAIA', '我的金庫', '交易性格', '損益對帳']
+      .every((s) => signs.includes(s)),
     signs.join(' / '));
-  // MAIA 的站牌是紫色，MAX 那四個是品牌藍。顏色是「這一區不是 MAX 的」
-  // 最快的說明，比距離還快 —— 所以它是一條斷言而不是註解。
+  // MAIA 現在是藍色 robot（accent:'max'），與東翼 MAX 同色系。空間上仍在中庭、
+  // 不進 MAX 藍 zone，靠「位置＋機器人造型」而非顏色來區隔 —— 這是 dev/shihya
+  // 併回 main 時的混搭決策（MAIA 用我方 robot 取代 Kiro 的紫色 maiapod）。
   const maiaAccent = await page
     .locator('#world-labels .spot-label', { hasText: 'MAIA' })
     .first()
     .getAttribute('data-accent');
-  ok('MAIA 站牌用紫色跟 MAX 的藍分開', maiaAccent === 'violet', String(maiaAccent));
+  ok('MAIA 站牌用藍色（robot，與 MAX 同色系）', maiaAccent === 'max', String(maiaAccent));
   ok('站牌用的是名詞不是動詞', !signs.some((s) => s.includes('讀取') || s.includes('查看')),
     signs.join(' / '));
 

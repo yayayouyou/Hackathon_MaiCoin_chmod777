@@ -1374,5 +1374,37 @@ article h3 { font-size: 15px; margin-bottom: 4px; }
   .boot-foot { flex-direction: column; align-items: stretch; }
 }
 
+/* ── 策略機器人面板 ─────────────────────────────────────── */
+.bot-create { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; padding: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.bot-create-row { display: flex; gap: 6px; }
+.bot-input { flex: 1; min-width: 0; padding: 5px 8px; font-size: 12px; color: var(--txt); background: var(--panel); border: 1px solid var(--line); border-radius: 0; }
+.bot-list { display: flex; flex-direction: column; gap: 8px; }
+.bot-card { border: 1px solid var(--line); background: var(--panel-2); }
+.bot-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; }
+.bot-dot { width: 8px; height: 8px; flex: none; background: var(--dim); border-radius: 50%; }
+.bot-dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.bot-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bot-meta { font-size: 10px; color: var(--dim); letter-spacing: 0.04em; }
+.bot-mode { color: var(--max); }
+.bot-pnl { display: flex; flex-direction: column; align-items: flex-end; font-size: 13px; white-space: nowrap; }
+.bot-pnl small { font-size: 9px; color: var(--dim); }
+.bot-pnl span { font-size: 11px; }
+.bot-actions { display: flex; align-items: center; gap: 6px; padding: 0 10px 9px; }
+.bot-tag { font-size: 10px; padding: 1px 6px; color: var(--txt); background: var(--panel); border: 1px solid var(--line); }
+.bot-tag.dim { color: var(--dim); }
+.bot-btn { padding: 4px 10px; font-size: 11px; color: var(--txt); background: var(--panel); border: 1px solid var(--line); cursor: pointer; border-radius: 0; }
+.bot-btn:hover:not(:disabled) { border-color: var(--cyan); }
+.bot-btn:disabled { opacity: 0.4; cursor: default; }
+.bot-btn.start { color: var(--green); border-color: var(--green); }
+.bot-btn.stop { color: var(--amber); border-color: var(--amber); }
+.bot-btn.danger { color: var(--rose); border-color: #3a1520; }
+.bot-detail { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+.bot-eval, .bot-trades { font-size: 11px; }
+.bot-eval .k, .bot-trades .k { display: block; font-size: 10px; letter-spacing: 0.1em; color: var(--dim); margin-bottom: 3px; }
+.bot-eval em { color: var(--dim); font-style: normal; }
+.bot-trade { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11px; }
+.bot-trade .dim { color: var(--dim); }
+.bot-trade .reason { margin-left: auto; font-family: var(--font); font-size: 10px; }
+
 }
 /* ↑ @layer core 結束 */

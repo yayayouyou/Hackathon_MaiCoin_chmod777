@@ -119,9 +119,12 @@ export const FEATURES: Feature[] = [
     accent: 'max',
     glyph: 'CS',
     panel: 'maxSupport',
-    // 客服辦公區在東翼南側，站位在辦公室前庭 (836,466)。
-    // frontOf(768,348,136,88) = (760,410,152,60)
-    place: { zone: 'lobby', wx: 836, wy: 440 },
+    // ⚠ 刻意沒有 place：客服辦公區已從大廳移除（那塊地讓給帳戶三站攤開），
+    //   世界裡沒有對應的互動點了。沒有 place 的 feature 會被 FeatureBar 的
+    //   runFeature() 直接 openPanel（見它的 fall-through），所以功能條與
+    //   `/` 命令面板都照樣開得起來；tests/zones.mjs 的落點檢查也會跳過它
+    //   （`if (!f.place) continue`）。要把客服放回世界的話，加一個 station
+    //   之後再把 place 補回來。
   },
   {
     id: 'agentChat',
@@ -147,8 +150,8 @@ export const FEATURES: Feature[] = [
     accent: 'green',
     glyph: 'HD',
     panel: 'holdings',
-    // vault(560,392)：frontOf=(552,422,72,60)
-    place: { zone: 'lobby', wx: 588, wy: 450 },
+    // vault(594,392)：碰撞盒 y430..446，frontOf=(586,422,72,60)
+    place: { zone: 'lobby', wx: 622, wy: 466 },
   },
   {
     id: 'behavior',
@@ -159,8 +162,8 @@ export const FEATURES: Feature[] = [
     accent: 'green',
     glyph: 'BH',
     panel: 'behavior',
-    // hologram(636,396)：frontOf=(628,410,56,60)
-    place: { zone: 'lobby', wx: 656, wy: 440 },
+    // hologram(716,408)：碰撞盒 y436..448，frontOf=(708,422,56,60)
+    place: { zone: 'lobby', wx: 736, wy: 466 },
   },
   {
     id: 'pnlDesk',
@@ -171,8 +174,21 @@ export const FEATURES: Feature[] = [
     accent: 'green',
     glyph: 'PL',
     panel: 'pnlDesk',
-    // board(704,392)：frontOf=(696,414,72,60)
-    place: { zone: 'lobby', wx: 732, wy: 444 },
+    // board(822,400)：碰撞盒 y434..448，frontOf=(814,422,72,60)
+    place: { zone: 'lobby', wx: 850, wy: 466 },
+  },
+  // ── 交易者公會（策略機器人房）──
+  {
+    id: 'strategyBots',
+    label: '策略機器人',
+    hint: '把回測策略打包成自動化 paper 機器人 · 選運行 · 看成交',
+    keys: 'bot 機器人 策略 自動 回測 backtest strategy auto paper 打包 runner',
+    group: 'analysis',
+    accent: 'max',
+    glyph: 'SB',
+    panel: 'strategyBots',
+    // robot(292,104)：frontOf=(284,112,40,60)，站位落在框內
+    place: { zone: 'guild', wx: 304, wy: 150 },
   },
   // …隊友各自往下加一筆
 ];

@@ -13,6 +13,7 @@ import { Holdings } from './Holdings';
 import { PnlDesk } from './PnlDesk';
 import { Behavior } from './Behavior';
 import { CommunityBrief } from './CommunityBrief';
+import { StrategyBots } from './StrategyBots';
 
 /**
  * ★ 全隊 append 點 2/4。
@@ -39,6 +40,8 @@ export const PANELS = {
   pnlDesk: definePanel({ id: 'pnlDesk', title: '損益對帳台', Component: PnlDesk }),
   behavior: definePanel({ id: 'behavior', title: '交易性格', Component: Behavior }),
   communityBrief: definePanel({ id: 'communityBrief', title: '今日全站社群焦點', Component: CommunityBrief }),
+  // ── 交易者公會（策略機器人）：把回測驗證過的策略打包成自動化 paper 機器人 ──
+  strategyBots: definePanel({ id: 'strategyBots', title: '策略機器人', Component: StrategyBots }),
 } as const satisfies Record<string, PanelDef>;
 
 export type PanelId = keyof typeof PANELS;
