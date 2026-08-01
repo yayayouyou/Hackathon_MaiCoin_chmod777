@@ -39,7 +39,11 @@ export default async function rooms({ browser, ok }) {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
-  await openAt(836, 460, 'MAX 官方客服');
+  // ⚠ y 取 420 而不是站位的 466。客服辦公區的互動範圍是 (760,410,152,60)，
+  //   兩個 y 都在範圍內，但**用滑鼠點**的時候 466 在遠處會被底部功能條蓋住
+  //   （鏡頭跟著角色，世界 y466 換算出來的螢幕座標落在 bar 上），點擊送不進
+  //   畫布。點在範圍上緣，walkTo() 一樣會把人帶到 (836,466) 站定。
+  await openAt(836, 420, 'MAX 官方客服');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
