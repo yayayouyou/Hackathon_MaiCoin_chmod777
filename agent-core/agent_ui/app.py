@@ -564,6 +564,67 @@ def get_orderbook(market: str = "btctwd", limit: int = 14):
         return {"error": str(e)[:120], "bids": [], "asks": []}
 
 
+# MAX 支援的 K 線週期（分鐘）。前端的時間軸切換只能從這裡挑，
+# 送別的數字 MAX 會退件。
+_KLINE_PERIODS = {
+    "1m": 1, "5m": 5, "15m": 15, "30m": 30,
+    "1h": 60, "2h": 120, "4h": 240, "6h": 360, "12h": 720,
+    "1d": 1440, "3d": 4320, "1w": 10080,
+}
+# 依 (market, period, limit) 分別快取 15 秒。K 線最短週期是 1 分鐘，
+# 15 秒的舊資料對圖形沒有可見影響，但能擋掉縮放/平移時的連續重抓。
+_kline_cache: Dict[str, Any] = {}
+
+
+@app.get("/api/klines")
+def get_klines(market: str = "btctwd", timeframe: str = "1h", limit: int = 300):
+    """K 線歷史（MAX 公開資料）— 供前端價格圖。
+
+    回傳已正規化成物件並**把秒級時間戳補成毫秒**：MAX 的 /api/v3/k 回的是
+    `[秒, o, h, l, c, v]`，前端 `new Date(秒)` 會得到 1970 年。這種錯不會讓
+    畫面壞掉，只會讓時間軸安靜地全錯 —— 在後端轉一次，前端就沒有機會轉錯。
+    """
+    tf = (timeframe or "1h").strip().lower()
+    period = _KLINE_PERIODS.get(tf)
+    if period is None:
+        return {"status": "ERROR", "candles": [],
+                "error": f"不支援的週期 {timeframe}；可用：{', '.join(_KLINE_PERIODS)}"}
+    limit = max(10, min(1000, int(limit)))
+
+    key = f"{market.lower()}|{period}|{limit}"
+    now = time.time()
+    hit = _kline_cache.get(key)
+    if hit and now - hit["ts"] < 15:
+        return {"status": "SUCCESS", "market": market, "timeframe": tf,
+                "candles": hit["data"], "cached": True}
+    try:
+        from skills.max_exchange.max_public import get_max_klines
+        raw = get_max_klines(market, limit=limit, period_minutes=period)
+        candles = []
+        for row in (raw if isinstance(raw, list) else []):
+            if not isinstance(row, list) or len(row) < 6:
+                continue
+            try:
+                ts = int(row[0])
+                candles.append({
+                    # 秒 → 毫秒（超過 1e11 視為已是毫秒，防 MAX 之後改格式）
+                    "t": ts * 1000 if ts < 100_000_000_000 else ts,
+                    "o": float(row[1]), "h": float(row[2]),
+                    "l": float(row[3]), "c": float(row[4]), "v": float(row[5]),
+                })
+            except (TypeError, ValueError):
+                continue
+        candles.sort(key=lambda k: k["t"])
+        if len(_kline_cache) > 40:      # 上限：每個交易對 × 週期都會佔一格
+            _kline_cache.clear()
+        _kline_cache[key] = {"ts": now, "data": candles}
+        return {"status": "SUCCESS", "market": market, "timeframe": tf,
+                "candles": candles, "cached": False}
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"/api/klines 失敗：{e}")
+        return {"status": "ERROR", "candles": [], "error": str(e)[:120]}
+
+
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     """

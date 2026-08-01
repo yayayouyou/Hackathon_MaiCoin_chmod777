@@ -33,7 +33,11 @@ export default async function state({ browser, ok }) {
     await page.waitForTimeout(800);
     ok('前端沒有任何密碼輸入框（金鑰不經手瀏覽器）',
       (await page.locator('input[type=password]').count()) === 0);
-    ok('不需要前端金鑰就能顯示餘額', await page.locator('.pos-table').first().isVisible());
+    // 餘額在交易面板第三欄的「餘額」分頁（第三欄預設顯示價格圖）
+    await page.locator('.trade > .col').nth(2).locator('.tabs button', { hasText: '餘額' }).click();
+    await page.waitForTimeout(600);
+    ok('不需要前端金鑰就能顯示餘額',
+      (await page.locator('.trade > .col').nth(2).innerText()).includes('TWD'));
     ok('localStorage 沒有金鑰痕跡',
       await page.evaluate(() => !/secret|apikey|api_key/i.test(JSON.stringify(localStorage))));
 

@@ -102,6 +102,79 @@ export async function getMarketRows(quote = 'twd', signal?: AbortSignal): Promis
  *
  * `?fast=1` 直接拒絕：離線示範不該產生任何可以被核准的 token。
  */
+// ── K 線 ────────────────────────────────────────────────────
+
+/** 後端已經把秒級時間戳補成毫秒（見 app.py 的 /api/klines），前端直接用。 */
+export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
+
+/** MAX 支援的週期。送別的字串後端會退件並列出可用值。 */
+export const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+export type Timeframe = (typeof TIMEFRAMES)[number];
+
+export async function getKlines(
+  market: string,
+  timeframe: Timeframe,
+  limit = 300,
+  signal?: AbortSignal,
+): Promise<Candle[]> {
+  failIfFlagged();
+  if (FLAGS.fast) {
+    // 離線示範：用固定亂數種子生一段假 K 線，讓圖表本身仍然看得出形狀
+    let p = 2_000_000;
+    return Array.from({ length: 120 }, (_, i) => {
+      const o = p;
+      p *= 1 + Math.sin(i / 7) * 0.004 + Math.cos(i / 3) * 0.002;
+      const c = p;
+      return { t: Date.now() - (120 - i) * 3_600_000, o, h: Math.max(o, c) * 1.002, l: Math.min(o, c) * 0.998, c, v: 10 + (i % 9) };
+    });
+  }
+  const res = await fetch(
+    `/api/klines?market=${encodeURIComponent(market)}&timeframe=${timeframe}&limit=${limit}`,
+    { signal: signal ?? null },
+  );
+  if (!res.ok) throw new Error(`後端回應 ${res.status}`);
+  const body = (await res.json()) as { status?: string; candles?: Candle[]; error?: string };
+  if (body.status !== 'SUCCESS') throw new Error(body.error ?? '取不到 K 線');
+  return body.candles ?? [];
+}
+
+// ── 訂單簿 ──────────────────────────────────────────────────
+
+/** MAX 的深度是字串陣列 [價格, 數量]，這裡轉成數字對。 */
+export type DepthLevel = { price: number; volume: number };
+export type Depth = { bids: DepthLevel[]; asks: DepthLevel[]; market?: string };
+
+export async function getOrderbook(market: string, limit = 14, signal?: AbortSignal): Promise<Depth> {
+  failIfFlagged();
+  if (FLAGS.fast) {
+    const mk = (base: number, dir: number): DepthLevel[] =>
+      Array.from({ length: limit }, (_, i) => ({
+        price: base * (1 + dir * i * 0.0004),
+        volume: 0.002 + ((i * 7) % 11) * 0.001,
+      }));
+    return { bids: mk(2_043_000, -1), asks: mk(2_046_000, 1) };
+  }
+  const res = await fetch(
+    `/api/orderbook?market=${encodeURIComponent(market)}&limit=${limit}`,
+    { signal: signal ?? null },
+  );
+  if (!res.ok) throw new Error(`後端回應 ${res.status}`);
+  const body = (await res.json()) as {
+    bids?: Array<[string, string]>;
+    asks?: Array<[string, string]>;
+    error?: string;
+  };
+  if (body.error) throw new Error(body.error);
+  const conv = (rows?: Array<[string, string]>): DepthLevel[] =>
+    (rows ?? [])
+      .map((r) => ({ price: parseFloat(r[0]), volume: parseFloat(r[1]) }))
+      .filter((r) => Number.isFinite(r.price) && Number.isFinite(r.volume));
+  // 賣單由低到高、買單由高到低 —— 畫面上賣在上、買在下，中間才是價差
+  const asks = conv(body.asks).sort((a, b) => a.price - b.price);
+  const bids = conv(body.bids).sort((a, b) => b.price - a.price);
+  return { bids, asks };
+}
+
 export type OrdType = 'limit' | 'market' | 'post_only';
 
 export async function previewOrder(

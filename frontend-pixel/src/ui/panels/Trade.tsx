@@ -7,6 +7,8 @@ import {
 import { approveOrder, rejectOrder } from '../../api/agent';
 import { useAsync } from '../useAsync';
 import { AsyncState } from '../Panel';
+import { PriceChart } from './PriceChart';
+import { OrderBook } from './OrderBook';
 
 /**
  * 現貨交易。CharPanel 的「交易」分頁，不是獨立面板。
@@ -75,10 +77,23 @@ function seedPrice(type: OrdType, side: 'buy' | 'sell', m: MarketRow): string {
   return trim(m.last * k, m.quote_precision);
 }
 
+const RIGHT_TABS = [
+  { id: 'chart', label: '價格圖' },
+  { id: 'book', label: '訂單簿' },
+  { id: 'balance', label: '餘額' },
+] as const;
+type RightTab = (typeof RIGHT_TABS)[number]['id'];
+
 export function Trade() {
   const [quote, setQuote] = useState<QuoteId>('twd');
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState<string | null>(null);
+  const [rightTab, setRightTab] = useState<RightTab>('chart');
+  /**
+   * 從訂單簿點來的價格。帶一個 nonce 是因為連點同一檔價格時 price 值不變，
+   * 少了它第二次點擊就不會有反應（使用者會以為壞了）。
+   */
+  const [pickedPrice, setPickedPrice] = useState<{ price: number; n: number } | null>(null);
 
   /**
    * 市場每 5 秒重抓（後端有 60 秒快取，所以實際打 MAX 的頻率遠低於此）。
@@ -155,15 +170,33 @@ export function Trade() {
         ) : !hasAccount ? (
           <AccountGate detail={dash.data?.account_error} />
         ) : sel ? (
-          <OrderForm market={sel} balances={balances} onDone={dash.reload} />
+          <OrderForm market={sel} balances={balances} onDone={dash.reload} pickedPrice={pickedPrice} />
         ) : (
           <div className="empty">請先選擇交易對</div>
         )}
       </div>
 
+      {/*
+        第三欄是最寬的（1fr），給圖表用。餘額收進分頁不會讓「下單前快速確認」
+        失效 —— 下單表單正上方一直有一行「可用 XXX」，那才是實際會看的位置。
+      */}
       <div className="col">
-        <h3>我的餘額</h3>
-        <Balances state={dash} />
+        <div className="tabs" style={{ marginBottom: 8 }}>
+          {RIGHT_TABS.map((t) => (
+            <button key={t.id} aria-selected={rightTab === t.id} onClick={() => setRightTab(t.id)}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {rightTab === 'chart' && sel && <PriceChart market={sel.id} base={sel.base} />}
+        {rightTab === 'book' && sel && (
+          <OrderBook
+            market={sel.id}
+            onPickPrice={(p) => setPickedPrice({ price: p, n: Date.now() })}
+          />
+        )}
+        {rightTab === 'balance' && <Balances state={dash} />}
+        {!sel && rightTab !== 'balance' && <div className="empty">請先選擇交易對</div>}
       </div>
     </div>
   );
@@ -280,10 +313,13 @@ function OrderForm({
   market,
   balances,
   onDone,
+  pickedPrice,
 }: {
   market: MarketRow;
   balances: Balance[];
   onDone: () => void;
+  /** 從訂單簿點來的價格。nonce 讓連點同一檔也會生效。 */
+  pickedPrice: { price: number; n: number } | null;
 }) {
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   // 預設「只掛單」：這個介面的預設行為應該是最不會意外花錢的那一個。
@@ -314,6 +350,17 @@ function OrderForm({
     // 行情每 5 秒換一次物件，但這裡只依賴 id/精度，不依賴 market.last
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [market.id, side, type]);
+
+  /**
+   * 訂單簿點價 → 填進價格欄。市價單沒有價格欄，點了不該有反應。
+   *
+   * 刻意不順便切換 side：點賣單那一側不代表想賣（照著賣一的價格買，正是
+   * 「掛在賣一等成交」的做法）。方向由使用者自己決定。
+   */
+  useEffect(() => {
+    if (pickedPrice && type !== 'market') setPrice(trim(pickedPrice.price, market.quote_precision));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedPrice?.n]);
 
   const quoteCur = market.quote.toUpperCase();
   const avail = (asset: string) => balances.find((b) => b.currency === asset)?.balance ?? 0;
