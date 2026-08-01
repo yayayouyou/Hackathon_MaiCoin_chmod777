@@ -467,13 +467,20 @@ def account_activity():
     out: Dict[str, Any] = {"ok": False}
     try:
         from skills.max_exchange.max_private import (
-            get_max_fund_transactions, get_max_converts, get_max_withdraw_addresses, get_max_my_trades)
+            get_max_fund_transactions, get_max_converts, get_max_withdraw_addresses, get_max_my_trades,
+            _norm_ts_ms)
         try:
             tr = get_max_my_trades(limit=12)
             out["trades"] = [{
                 "market": str(t.get("market", "")).upper(), "side": t.get("side"),
                 "price": t.get("price"), "volume": t.get("volume"), "funds": t.get("funds"),
-                "time_ms": int(t.get("created_at_in_ms") or (int(t.get("created_at") or 0) * 1000)) or None,
+                # ⚠ 走 _norm_ts_ms（與 flow / converts 同一套），不要自己乘 1000。
+                #   MAX v3 的成交紀錄回的是 `created_at` 且**已經是毫秒**，沒有
+                #   `created_at_in_ms` 這個欄位 —— 舊寫法取不到它就掉進 `created_at * 1000`
+                #   的 fallback，時間戳整整大 1000 倍。前端 fmtT() 算出來的 diff 是大負數，
+                #   落進「未滿一小時」那一支再被 Math.max(1, …) 夾住，於是每一筆成交
+                #   都顯示「1 分前」—— 不會看起來壞掉，只是安靜地說謊。
+                "time_ms": _norm_ts_ms(t.get("created_at_in_ms") or t.get("created_at")),
             } for t in (tr if isinstance(tr, list) else [])]
         except Exception:  # noqa: BLE001
             out["trades"] = []
