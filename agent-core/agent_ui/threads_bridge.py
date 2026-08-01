@@ -62,6 +62,17 @@ def _is_before_cutoff(timestamp: Any, cutoff: datetime | None) -> bool:
     return value < cutoff
 
 
+def _post_key(post: dict[str, Any]) -> str:
+    """The sort key a post is filed under, computed once at insertion.
+
+    Never recompute this for a post that is already stored.  A post that is
+    published after being stored gains a ``threads_id`` and would land on a
+    different key, and ``_save`` only puts — the row under the old key would
+    survive and the discussion would show the message twice.
+    """
+    return "T#" + str(post["threads_id"]) if post.get("threads_id") else "P#" + str(post["id"])
+
+
 def _load() -> dict[str, list[dict[str, Any]]]:
     table = _ddb_table("DYNAMODB_DISCUSSION_POSTS_TABLE")
     if table:
@@ -72,7 +83,9 @@ def _load() -> dict[str, list[dict[str, Any]]]:
             if not start: break
         result: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
-            row.pop("post_key", None); result.setdefault(row["space_id"], []).append(row)
+            # post_key deliberately stays on the record so it survives a
+            # round trip unchanged.  See _post_key.
+            result.setdefault(row["space_id"], []).append(row)
         return result
     if not _STORE.exists():
         return {}
@@ -90,7 +103,7 @@ def _save(value: dict[str, list[dict[str, Any]]]) -> None:
             for space_id, posts in value.items():
                 for post in posts:
                     item = dict(post); item["space_id"] = space_id
-                    item["post_key"] = "T#" + str(post["threads_id"]) if post.get("threads_id") else "P#" + str(post["id"])
+                    item["post_key"] = post.get("post_key") or _post_key(post)
                     batch.put_item(Item=item)
         return
     _STORE.parent.mkdir(parents=True, exist_ok=True)
@@ -158,15 +171,21 @@ def _require_active_space(room_id: str) -> dict[str, Any]:
     return space
 
 
-def create_space(title: str, creator: str, opening_text: str) -> dict[str, Any]:
+def create_space(title: str, creator: str, opening_text: str,
+                 username: str | None = None, author_role: str | None = None) -> dict[str, Any]:
     room_id = f"topic-{secrets.token_urlsafe(6)}"
     space = {"id": room_id, "title": title[:120], "creator": creator[:60], "created_at": _now(), "archived": False}
     # The opening message is the official Threads root. The title names the
     # MAIA discussion room only, so both surfaces begin with the same content.
+    #
+    # Unlike a reply, this one must not fall back to a local-only record: every
+    # later message hangs off this Threads id, so a room without it can never
+    # accept a post.  Storing a room we know is broken helps nobody.
     remote = publish_platform_post(creator[:60], opening_text)
     root = {
         "id": f"topic-root-{secrets.token_urlsafe(8)}", "room_id": room_id,
         "author": creator[:60], "source_author": creator[:60], "text": opening_text,
+        "username": username, "author_role": author_role,
         "source": "platform", "created_at": _now(), "threads_id": remote["threads_id"],
         "permalink": None, "sync_state": "published", "is_thread_root": True,
         "thread_root_id": None, "parent_post_id": None, "threads_parent_id": None, "kind": "topic",
@@ -229,6 +248,11 @@ def list_posts(room_id: str) -> list[dict[str, Any]]:
 
 
 def _upsert(room_id: str, post: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    # _LOCK only serializes writers inside one process.  Reading the whole
+    # store, mutating it and writing it back is therefore safe for a single
+    # container only — two instances accepting posts concurrently would each
+    # overwrite the other's message with no error.  Deploy one instance, or
+    # move to per-item writes first.
     with _LOCK:
         store = _load()
         posts = store.setdefault(room_id, [])
@@ -237,9 +261,26 @@ def _upsert(room_id: str, post: dict[str, Any]) -> tuple[dict[str, Any], bool]:
             for current in posts:
                 if current.get("threads_id") == remote_id:
                     return current, False
+        post.setdefault("post_key", _post_key(post))
         posts.append(post)
         _save(store)
         return post, True
+
+
+def update_post(room_id: str, post_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
+    """Persist a change to one stored post.
+
+    _load() rebuilds every record from storage, so mutating the dict a caller
+    happens to be holding never reaches the database.
+    """
+    with _LOCK:
+        store = _load()
+        for post in store.get(room_id, []):
+            if post.get("id") == post_id:
+                post.update(patch)
+                _save(store)
+                return post
+    return None
 
 
 def _reconcile_parent_links(room_id: str) -> int:
@@ -343,7 +384,24 @@ def publish_platform_post(author: str, text: str, reply_to_id: str | None = None
     return {"threads_id": str(thread_id), "published_text": body}
 
 
-def create_platform_post(room_id: str, author: str, text: str, publish: bool = True, parent_post_id: str | None = None) -> dict[str, Any]:
+def _publish_pending(room_id: str, post: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Try to push one already-stored post to Threads, recording the outcome.
+
+    Never raises: the post is durable before this runs, and Threads being
+    unavailable must not cost the platform a message.
+    """
+    try:
+        remote = publish_platform_post(post["author"], post["text"], post.get("threads_parent_id"))
+    except RuntimeError as exc:
+        updated = update_post(room_id, post["id"], {"sync_state": "local", "sync_error": str(exc)[:200]})
+        return updated or post, False
+    updated = update_post(room_id, post["id"], {**remote, "sync_state": "published", "sync_error": ""})
+    return updated or post, True
+
+
+def create_platform_post(room_id: str, author: str, text: str, publish: bool = True,
+                         parent_post_id: str | None = None,
+                         username: str | None = None, author_role: str | None = None) -> dict[str, Any]:
     # One MAIA discussion room maps to one Threads root post.  Every later
     # platform message becomes a reply under that root, never a new root post.
     space = _require_active_space(room_id)
@@ -367,6 +425,12 @@ def create_platform_post(room_id: str, author: str, text: str, publish: bool = T
         "id": f"platform-{secrets.token_urlsafe(8)}", "room_id": room_id,
         "author": author[:60], "text": text, "source": "platform",
         "source_author": author[:60], "created_at": _now(), "threads_id": None,
+        # The platform account behind the message.  author is only a nickname
+        # snapshot and nicknames are not unique, so it cannot identify anyone.
+        # author_role is likewise a snapshot: revoking someone's official
+        # status must not retroactively rewrite posts they already made under
+        # it, which are mirrored on Threads and cannot be rewritten there.
+        "username": username, "author_role": author_role,
         "permalink": None, "sync_state": "local", "is_thread_root": False,
         "thread_root_id": discussion_root_id,
         # An untargeted MAIA message is a direct reply to the actual discussion
@@ -375,11 +439,14 @@ def create_platform_post(room_id: str, author: str, text: str, publish: bool = T
         "parent_post_id": effective_parent.get("id") if effective_parent else parent_post_id,
         "threads_parent_id": effective_parent.get("threads_id") if effective_parent else discussion_root_id,
     }
-    if publish:
-        remote = publish_platform_post(post["author"], post["text"], post["threads_parent_id"])
-        post.update(remote)
-        post["sync_state"] = "published"
-    return _upsert(room_id, post)[0]
+    # Store first, publish second.  Threads is a mirror of the discussion, not
+    # a gate on it: an outage, an expired token or an over-length body must
+    # leave the message in the database rather than discard it.  sync_threads()
+    # retries whatever is still marked local.
+    stored = _upsert(room_id, post)[0]
+    if not publish:
+        return stored
+    return _publish_pending(room_id, stored)[0]
 
 
 def _mention_content(raw_text: str) -> str:
@@ -415,6 +482,17 @@ def sync_threads(room_id: str, limit: int = 50) -> dict[str, int]:
     # sync_mentions_to_spaces().  A room-level sync must never mix them here.
     imported_mentions = imported_replies = reply_errors = mention_errors = 0
 
+    # Drain anything create_platform_post could not publish before importing,
+    # so a message stranded by an outage reaches Threads on the next sync
+    # instead of staying local forever.  Publish first: a post that lands now
+    # is a parent the import below can attach incoming replies to.
+    published = publish_errors = 0
+    for post in list_posts(room_id):
+        if post.get("source") == "platform" and post.get("sync_state") == "local":
+            _, ok = _publish_pending(room_id, post)
+            published += int(ok)
+            publish_errors += int(not ok)
+
     # A locally created room is rooted at MAIA's post.  A room created from a
     # mention is rooted at the original Threads post, while MAIA's automated
     # acknowledgement is merely one child.  Query the real discussion root in
@@ -449,7 +527,9 @@ def sync_threads(room_id: str, limit: int = 50) -> dict[str, int]:
             _, added = _upsert(room_id, imported)
             imported_replies += int(added)
     _reconcile_parent_links(room_id)
-    return {"mentions": imported_mentions, "replies": imported_replies, "mention_errors": mention_errors, "reply_errors": reply_errors}
+    return {"mentions": imported_mentions, "replies": imported_replies,
+            "mention_errors": mention_errors, "reply_errors": reply_errors,
+            "published": published, "publish_errors": publish_errors}
 
 
 def sync_mentions_to_spaces(limit: int = 50) -> dict[str, int]:

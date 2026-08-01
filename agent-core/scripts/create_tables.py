@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""建立玩家登入與討論室所需的 DynamoDB 表（已存在就跳過，可重複執行）。
+"""建立玩家登入所需的 DynamoDB 表（已存在就跳過，可重複執行）。
+
+討論室的兩張表不在這裡 —— 它們由 threads_bridge 使用，表名走
+DYNAMODB_DISCUSSION_{SPACES,POSTS}_TABLE 環境變數指定既有的表，不由本腳本建立。
+
 
 本機（DynamoDB Local）：
     docker run -d -p 8000:8000 --name maia-ddb amazon/dynamodb-local
@@ -21,14 +25,14 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent_ui import discussion, store  # noqa: E402
+from agent_ui import store  # noqa: E402
 
 
 def main() -> int:
     where = os.getenv("DYNAMODB_ENDPOINT_URL") or "AWS DynamoDB"
     print(f"目標：{where}（region={os.getenv('AWS_DEFAULT_REGION') or '預設'}）")
     try:
-        created = store.create_tables() + discussion.create_tables()
+        created = store.create_tables()
     except Exception as e:  # noqa: BLE001
         print(f"[FAIL] 建表失敗：{e}")
         return 1

@@ -29,7 +29,7 @@ os.environ.setdefault("ROUTING_LOG", "1")
 from agent.ollama_agent import run_agent_turn
 from agent.ollama_config import resolve_host, resolve_auth, DEFAULT_OLLAMA_HOST
 from agent.personas import list_personas
-from agent_ui import auth, discussion, store
+from agent_ui import auth, store
 
 app = FastAPI(title="MAIA · MAX AI Trading Copilot")
 
@@ -145,15 +145,6 @@ class AuthRequest(BaseModel):
     """註冊／登入。"""
     username: str
     password: str
-
-
-class PostRequest(BaseModel):
-    """討論室發文。
-
-    刻意只有 text —— 作者與角色由後端從 session 取，不接受前端指定。多一個 author
-    欄位就等於讓任何人都能冒名發文，或把自己的發言標成官方。
-    """
-    text: str
 
 
 class ProgressRequest(BaseModel):
@@ -352,42 +343,24 @@ def auth_progress(req: ProgressRequest, username: str = Depends(auth.require_ses
     return {"ok": True}
 
 
-@app.get("/api/discussion/{space_id}/posts")
-def discussion_list(space_id: str, limit: int = 50):
-    """列出討論室貼文（公開，不需登入 —— 沒登入的人也要看得到討論室內容）。"""
-    return {"posts": [_public_post(p) for p in discussion.list_posts(space_id, limit)]}
+def _public_discussion_post(post: Dict[str, Any]) -> Dict[str, Any]:
+    """挑出可以送到瀏覽器的討論室貼文欄位。
 
-
-@app.post("/api/discussion/{space_id}/posts")
-def discussion_post(space_id: str, req: PostRequest,
-                    username: str = Depends(auth.require_session)):
-    """發文。登入者都可以發；差別在貼文記下發文者是一般使用者還是官方帳號。
-
-    官方帳號的貼文會被另一條流程同步到 Threads，一般使用者的只留在平台上 ——
-    判斷依據就是這裡寫進去的 author_role。
+    白名單而非黑名單，理由同 auth.public_player：這個端點不需登入就讀得到，
+    而貼文紀錄裡有 username（登入帳號）與 Threads 的內部 id。用黑名單的話，
+    之後任何人往貼文多加一個欄位就會預設外流。
     """
-    text = (req.text or "").strip()
-    if not text:
-        raise HTTPException(status_code=400, detail="發文內容不能是空的。")
-
-    # 角色從 DynamoDB 即時查，不從 cookie 或請求主體讀 —— 撤銷官方身分要立即生效
-    player = store.get_player(username)
-    if not player:
-        raise HTTPException(status_code=401, detail="找不到這個帳號。")
-
-    post = discussion.create_post(space_id, username, auth.role_of(player), text)
-    return {"post": _public_post(post)}
-
-
-def _public_post(post: Dict[str, Any]) -> Dict[str, Any]:
-    """挑出可以送到瀏覽器的欄位。白名單，理由同 auth.public_player。"""
     return {
-        "id": str(post.get("post_key", "")),
+        "id": post.get("id", ""),
         "author": post.get("author", ""),
-        "author_role": post.get("author_role", auth.ROLE_USER),
+        "author_role": post.get("author_role"),
         "text": post.get("text", ""),
+        "source": post.get("source", "platform"),
+        "source_author": post.get("source_author"),
         "created_at": post.get("created_at", ""),
-        "likes": int(post.get("likes", 0) or 0),
+        "permalink": post.get("permalink"),
+        "parent_post_id": post.get("parent_post_id"),
+        "sync_state": post.get("sync_state"),
     }
 
 
@@ -924,7 +897,7 @@ def get_discussion(room_id: str):
     if not space or space.get("archived"):
         raise HTTPException(status_code=404, detail="discussion space was not found")
     posts = [post for post in list_posts(room_id) if post.get("kind") != "bridge" and post.get("text") != "此討論已同步至 MAIA 平台；可直接回覆本串。"]
-    return {"posts": posts}
+    return {"posts": [_public_discussion_post(post) for post in posts]}
 
 
 @app.get("/api/discussion-spaces")
@@ -941,7 +914,9 @@ def create_discussion_space(req: DiscussionSpaceRequest, username: str = Depends
         from agent_ui.threads_bridge import create_space
         player = store.get_player(username) or {}
         author = str(player.get("nickname") or username)
-        return {"space": create_space(req.title.strip(), author, req.opening_text.strip())}
+        # 角色從 DynamoDB 即時查，不從 cookie 或請求主體讀 —— 撤銷官方身分要立即生效
+        return {"space": create_space(req.title.strip(), author, req.opening_text.strip(),
+                                      username, auth.role_of(player))}
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -974,7 +949,10 @@ def create_discussion_post(
         if not player:
             raise HTTPException(status_code=401, detail="找不到這個帳號。")
         author = str(player.get("nickname") or username)
-        return {"post": create_platform_post(room_id, author, req.text.strip(), True, req.parent_post_id)}
+        # 角色從 DynamoDB 即時查，不從 cookie 或請求主體讀 —— 撤銷官方身分要立即生效
+        post = create_platform_post(room_id, author, req.text.strip(), True, req.parent_post_id,
+                                    username, auth.role_of(player))
+        return {"post": _public_discussion_post(post)}
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
