@@ -308,6 +308,9 @@ const CANNED = {
 };
 
 async function pull<T>(path: string, signal: AbortSignal | undefined, fallback: T): Promise<T> {
+  // `?failApi=1` 一律失敗，訊息與 api/index.ts 的 settle() 一致 —— 那個旗標是
+  // 專案刻意用來把每個面板的錯誤狀態實際走過一遍的，不實作它那條路就走不到。
+  if (FLAGS.failApi) throw new Error('連線失敗，請稍後再試');
   if (FLAGS.fast) return fallback;
 
   const res = await fetch(path, { signal: signal ?? null });

@@ -16,7 +16,13 @@ export default async function state({ browser, ok }) {
     await page.close();
   }
 
-  // ── 金鑰只存記憶體、收藏存 localStorage ──
+  // ── 金鑰完全不在瀏覽器、收藏存 localStorage ──
+  //
+  // ⚠ 這一段原本是「在面板裡填 access/secret → 持倉解鎖 → 檢查金鑰沒進
+  //   localStorage」。金鑰改由後端 .env 保管（HMAC 簽章在伺服器端完成）之後，
+  //   那個輸入框已經移除，所以斷言換成**更強**的版本：不是「金鑰沒有被寫進
+  //   localStorage」，而是「前端根本沒有地方可以輸入金鑰」。
+  //   收藏與暱稱的持久化斷言原封不動 —— 它們跟金鑰無關。
   {
     const page = await openPage(browser);
     await page.evaluate(() => localStorage.clear());
@@ -25,16 +31,11 @@ export default async function state({ browser, ok }) {
 
     await page.keyboard.press('KeyI');
     await page.waitForTimeout(800);
-    await page.locator('input[type=text]').nth(1).fill('demo-access');
-    await page.locator('input[type=password]').fill('demo-secret');
-    // exact 不可省：HUD 那張角色卡的無障礙名稱含「○ 未連接 · 示範帳戶」，
-    // 而 getByRole 的 name 預設是子字串比對 —— 少了 exact 會同時命中兩顆
-    // 按鈕，Playwright 的 strict mode 直接丟例外，整支套件中斷。
-    await page.getByRole('button', { name: '連接', exact: true }).click();
-    await page.waitForTimeout(1000);
-    ok('填入金鑰後持倉解鎖', await page.locator('.pos-table').isVisible());
-    ok('金鑰沒有寫進 localStorage',
-      await page.evaluate(() => !JSON.stringify(localStorage).toLowerCase().includes('demo-secret')));
+    ok('前端沒有任何密碼輸入框（金鑰不經手瀏覽器）',
+      (await page.locator('input[type=password]').count()) === 0);
+    ok('不需要前端金鑰就能顯示餘額', await page.locator('.pos-table').first().isVisible());
+    ok('localStorage 沒有金鑰痕跡',
+      await page.evaluate(() => !/secret|apikey|api_key/i.test(JSON.stringify(localStorage))));
 
     await page.locator('.tabs button', { hasText: '收藏' }).click();
     await page.waitForTimeout(700);
@@ -59,7 +60,8 @@ export default async function state({ browser, ok }) {
     await page.waitForTimeout(1000);
     await page.keyboard.press('KeyI');
     await page.waitForTimeout(900);
-    ok('重整後金鑰清空、回到未連接', await page.locator('.gate-mask').first().isVisible());
+    ok('重整後前端仍然沒有金鑰輸入框',
+      (await page.locator('input[type=password]').count()) === 0);
     await page.locator('.tabs button', { hasText: '收藏' }).click();
     await page.waitForTimeout(900);
     ok('重整後收藏還在', (await page.locator('.rank-row').count()) === 1,

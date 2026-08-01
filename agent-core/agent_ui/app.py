@@ -69,6 +69,8 @@ def _require_approval_secret(x_approval_secret: Optional[str] = Header(default=N
 TICKER_MARKETS = ["btctwd", "ethtwd", "usdttwd", "soltwd", "xrptwd", "dogetwd",
                   "adatwd", "bnbtwd", "ltctwd", "linktwd"]
 _ticker_cache: Dict[str, Any] = {"ts": 0.0, "data": None}
+# 完整市場清單 + 報價（60 秒快取），供前端現貨交易面板的交易對列表
+_markets_cache: Dict[str, Any] = {"ts": 0.0, "data": None}
 
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
@@ -80,6 +82,16 @@ class ChatRequest(BaseModel):
 
 class OrderApprovalRequest(BaseModel):
     token: str
+
+
+class OrderPreviewRequest(BaseModel):
+    """前端下單表單送出的意圖。**它不會下單**，只產生一份待核准的凍結計畫。"""
+    market: str
+    side: str                          # buy / sell
+    volume: float
+    ord_type: str = "limit"            # limit / market
+    price: Optional[float] = None      # 市價單留空
+    exchange: str = "max"
 
 
 class ExportRequest(BaseModel):
@@ -689,6 +701,129 @@ def upload_report_to_s3(
         "key": key,
         "download_url": url,
         "expires_in_seconds": 900,
+    }
+
+
+@app.get("/api/markets")
+def get_markets(quote: str = ""):
+    """可交易市場清單 + 當前報價（供前端現貨交易面板的交易對列表）。
+
+    為什麼不用 /api/tickers：那一支只回頂部跑馬燈的 10 個白名單市場。
+    交易面板要能選到帳戶裡真正持有的任何幣，清單必須是完整的。
+
+    帶 60 秒快取 —— 市場清單一天也不會變幾次，但報價要夠新，
+    所以取兩者的折衷：清單與報價一起快取，前端自己每幾秒重抓。
+    """
+    now = time.time()
+    q = (quote or "").strip().lower()
+    if _markets_cache["data"] is not None and now - _markets_cache["ts"] < 60:
+        rows = _markets_cache["data"]
+        return {"status": "SUCCESS", "markets": [r for r in rows if not q or r["quote"] == q], "cached": True}
+    try:
+        from skills.max_exchange.max_public import get_max_markets, _max_public_request
+        mkts = [m for m in (get_max_markets() or []) if m.get("id")]
+        ids = [str(m["id"]).lower() for m in mkts]
+
+        # ⚠ /api/v3/tickers **必須**帶 markets[]，不帶會回 400（不是回全部）。
+        #   市場數量上百，一次塞進 query string 會過長 → 分批打。
+        px: Dict[str, Dict[str, Any]] = {}
+        CHUNK = 60
+        for i in range(0, len(ids), CHUNK):
+            try:
+                for t in (_max_public_request("/api/v3/tickers", {"markets[]": ids[i:i + CHUNK]}) or []):
+                    m = str(t.get("market") or "")
+                    if m:
+                        px[m] = t
+            except Exception:  # noqa: BLE001
+                continue          # 某一批壞掉不該讓整份清單消失，那一批就是沒有報價
+
+        rows: List[Dict[str, Any]] = []
+        for m in mkts:
+            mid = str(m["id"]).lower()
+            t = px.get(mid) or {}
+            try:
+                last = float(t.get("last") or 0)
+                open_ = float(t.get("open") or 0)
+            except (TypeError, ValueError):
+                last, open_ = 0.0, 0.0
+            rows.append({
+                "id": mid,
+                "name": m.get("name"),
+                "base": str(m.get("base_unit") or "").upper(),
+                "quote": str(m.get("quote_unit") or "").lower(),
+                "last": last,
+                "pct": (last / open_ - 1) * 100 if open_ else 0.0,
+                "vol": float(t.get("vol") or 0) if t.get("vol") else 0.0,
+                # 下單表單靠這幾個做前端驗證，不然只能等後端退件才知道打錯。
+                # 欄位名對齊 get_max_markets() 的輸出（它已經改過名，不是 MAX 原始欄位）
+                "min_base_amount": m.get("min_base_amount"),
+                "base_precision": m.get("base_precision"),
+                "quote_precision": m.get("quote_precision"),
+            })
+        rows.sort(key=lambda r: -(r["vol"] * (r["last"] or 0)))
+        _markets_cache.update(ts=now, data=rows)
+        return {"status": "SUCCESS", "markets": [r for r in rows if not q or r["quote"] == q], "cached": False}
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"/api/markets 失敗：{e}")
+        return {"status": "ERROR", "markets": [], "error": str(e)[:120]}
+
+
+@app.post("/api/order_preview")
+def order_preview(req: OrderPreviewRequest, _: None = Depends(_require_approval_secret)):
+    """把前端下單表單的意圖轉成一份**待核准的凍結計畫**，回 token 給前端確認用。
+
+    ⚠ 這一支**不會下單**。它與模型走的是同一條互鎖：先產生計畫、凍結模式與
+      參數、登記成 pending，真正送出一定要再打 /api/approve_order 帶 token。
+      多這一跳的理由是「使用者在畫面上核准的，必須就是實際送出的那一筆」——
+      表單值在確認框開著的時候還可能被改，凍結計畫讓那件事不可能發生。
+
+    ⚠ 模式在這裡就凍住（paper / live）。核准之後 approve_and_execute 依凍結
+      的 mode 執行、不重讀環境變數 —— 否則「在模擬盤按下核准、送出前有人把
+      .env 改成 live」就會變成真單。
+    """
+    from agent import trade_approval as ta
+    from agent.trade_approval import _APPROVAL_TTL_SEC
+    from skills.execution.live_guard import effective_risk_mode, exposure_window
+    from skills.execution.risk_guard import validate_order
+
+    market = (req.market or "").replace("/", "").replace("_", "").lower()
+    side = (req.side or "").lower()
+    ord_type = (req.ord_type or "limit").lower()
+
+    # 取當前市價：市價單用它估算名目金額，限價單用它讓使用者看到偏離多少
+    latest = 0.0
+    try:
+        from skills.max_exchange.max_public import _max_public_request
+        for t in (_max_public_request("/api/v3/tickers", {"markets[]": [market]}) or []):
+            if str(t.get("market")) == market:
+                latest = float(t.get("last") or 0)
+    except Exception as e:  # noqa: BLE001
+        return {"status": "ERROR", "error": f"取不到 {market} 的市價：{str(e)[:80]}"}
+    if latest <= 0:
+        return {"status": "ERROR", "error": f"取不到 {market} 的市價，無法估算金額"}
+
+    ok, why = validate_order(market, side, req.volume, req.price or 0.0, ord_type, latest)
+    if not ok:
+        return {"status": "ERROR", "error": why}
+
+    mode, mode_note = effective_risk_mode()
+    plan = ta.build_order_plan(
+        {"exchange_id": req.exchange, "market": market, "side": side,
+         "volume": req.volume, "price": req.price, "ord_type": ord_type},
+        latest, mode,
+    )
+    token, plan_h = ta.register_pending(plan)
+    return {
+        "status": "SUCCESS",
+        "token": token,
+        "hash": plan_h,
+        "summary": ta.human_summary(plan),
+        "plan": plan,
+        "mode": mode,
+        "mode_note": mode_note,
+        # 讓確認框能顯示「這一筆會用掉多少額度」，而不是送出被擋才知道
+        "exposure": exposure_window(),
+        "ttl_sec": _APPROVAL_TTL_SEC,
     }
 
 

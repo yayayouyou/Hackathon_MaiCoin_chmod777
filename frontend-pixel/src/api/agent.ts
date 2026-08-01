@@ -241,8 +241,14 @@ export async function loadSession(id: string, signal?: AbortSignal): Promise<Ses
 // 核准/拒絕端點要帶 X-Approval-Secret 標頭（值 = /api/config 的 approval_secret，
 // 每次後端啟動換一把、只透過同源交給前端，擋跨源 CSRF）。見 agent_ui/app.py:60,695。
 
-/** 取回本次後端的核准密鑰（同源；失敗回空字串）。 */
-async function getApprovalSecret(): Promise<string> {
+/**
+ * 取回本次後端的核准密鑰（同源；失敗回空字串）。
+ *
+ * `export` 是給 `api/trade.ts` 用的 —— 現貨交易面板的 `/api/order_preview`
+ * 也掛同一個 `_require_approval_secret` 守衛。這種安全相關的東西複製第二份
+ * 遲早會兩邊不一致，共用同一個來源比較安全。
+ */
+export async function getApprovalSecret(): Promise<string> {
   try {
     const res = await fetch('/api/config');
     if (!res.ok) return '';
