@@ -95,7 +95,7 @@ export const FEATURES: Feature[] = [
     accent: 'max',
     glyph: 'NW',
     panel: 'maxNews',
-    // frontOf(728,216,76,80) = (720,270,92,60)，站位在 (766,326)
+    // frontOf(728,210,76,80) = (720,264,92,60)，站位在 (766,320)
     place: { zone: 'lobby', wx: 766, wy: 320 },
   },
   {
@@ -107,7 +107,7 @@ export const FEATURES: Feature[] = [
     accent: 'max',
     glyph: 'EV',
     panel: 'maxEvents',
-    // frontOf(836,212,96,84) = (828,270,112,60)，站位在 (884,326)
+    // frontOf(836,208,96,84) = (828,266,112,60)，站位在 (884,322)
     place: { zone: 'lobby', wx: 884, wy: 320 },
   },
   {
@@ -121,7 +121,7 @@ export const FEATURES: Feature[] = [
     panel: 'maxSupport',
     // 客服辦公區在東翼南側，站位在辦公室前庭 (836,466)。
     // frontOf(768,348,136,88) = (760,410,152,60)
-    place: { zone: 'lobby', wx: 836, wy: 460 },
+    place: { zone: 'lobby', wx: 836, wy: 440 },
   },
   {
     id: 'agentChat',
@@ -135,7 +135,7 @@ export const FEATURES: Feature[] = [
     accent: 'violet',
     glyph: 'AI',
     panel: 'agentChat',
-    // frontOf(376,216,64,80) = (368,270,80,60)，站位在 (408,326)
+    // frontOf(376,214,64,80) = (368,268,80,60)，站位在 (408,324)
     place: { zone: 'lobby', wx: 408, wy: 320 },
   },
   // …隊友各自往下加一筆
