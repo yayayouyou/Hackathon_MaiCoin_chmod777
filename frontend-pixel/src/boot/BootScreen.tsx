@@ -1,22 +1,28 @@
 import { useEffect, useState } from 'react';
-import { enterWorld, setNickname, useUI } from '../ui/uiStore';
+import { enterWorld, setCharacter, setNickname, useUI } from '../ui/uiStore';
+import { me, type Player } from '../api/auth';
+import { getCharacter } from '../art/characters';
+import { hydrate, setAuthed } from '../state';
 import { CharPicker } from './CharPicker';
+import { LoginPanel } from './LoginPanel';
 
 /**
- * 進場畫面（規格 §5）。
+ * 進場畫面（規格 §5）。兩個步驟：先帳號，再取名選角。
  *
- * **這不是身分驗證。** 沒有帳號、沒有密碼、沒有金鑰欄位，打的名字只存在
- * 這台瀏覽器的 localStorage 裡。專案的鐵律是「交易所金鑰永遠不進瀏覽器」
- * （見 `state.ts` 檔頭），所以這裡從一開始就沒有東西好驗證 —— 與其擺兩個
- * 什麼都不接的欄位假裝有登入，不如老實做成「取個名字、選個角色、進去」。
+ * **帳號驗的是應用層的玩家身分，不是交易所憑證。** 專案的鐵律
+ * 「交易所金鑰永遠不進瀏覽器」（見 `state.ts` 檔頭）完全沒有鬆動 ——
+ * MAX 的 API 金鑰依舊只活在後端，這個畫面上永遠不會有金鑰欄位。
+ * 登入之後暱稱、角色與收藏改存 DynamoDB，換裝置也跟著走。
  *
  * 目標 8 秒。世界從第一幀就在這層 overlay 背後跑著（`main.tsx` 的
  * `startGame()` 是無條件執行的），所以按下「進入」不需要載入任何東西，
  * 只是把幕拉開。
  *
- * 三個逃生口都通到同一個地方（`enterWorld()`）：
+ * 逃生口一個都沒有拿掉，而且**刻意在登入步驟也保持可用** —— 後端連不上時
+ * 若登入是唯一入口，整個世界會跟著被鎖死，而世界本身根本不需要帳號才能走：
  *   · 「進入數位廣場」按鈕
  *   · 右上角「略過」—— 給只想趕快看到東西的評審
+ *   · 登入卡上的「以訪客身分逛逛」
  *   · `Ctrl+Shift+Enter` —— 不用 F9（macOS 是 Mission Control）、
  *     不用 Escape（打字時會誤觸）
  */
@@ -26,6 +32,7 @@ const randomNick = (): string => `遊客${Math.floor(1000 + Math.random() * 9000
 export function BootScreen() {
   const { nickname, phase } = useUI();
   const [draft, setDraft] = useState(nickname);
+  const [step, setStep] = useState<'checking' | 'auth' | 'profile'>('checking');
 
   /**
    * 三個入口共用同一條路，包含「略過」。
@@ -37,6 +44,40 @@ export function BootScreen() {
     setNickname(draft);
     enterWorld();
   };
+
+  /**
+   * 把伺服器那份進度灌回本機。包在 `hydrate()` 裡是為了不要把剛讀到的值
+   * 立刻再 PUT 回去一次（見 `state.ts` 的 `hydrate` 註解）。
+   */
+  const applyPlayer = (p: Player): void => {
+    setAuthed(true);
+    hydrate(() => {
+      // 空字串代表這個帳號還沒設過，這時要留著本機隨機產生的預設值
+      if (p.nickname) setNickname(p.nickname);
+      // 存進去的 id 可能是舊版角色表的，查不到就退回預設 —— 與 uiStore 同一套規則
+      if (p.character) setCharacter(getCharacter(p.character).id);
+    });
+    if (p.nickname) setDraft(p.nickname);
+    setStep('profile');
+  };
+
+  // 進場先問一次「這個瀏覽器還登著嗎」。失敗（含 5 秒逾時）就顯示登入卡，
+  // 人仍然可以用訪客身分進去 —— 後端掛掉不該連世界都進不了。
+  useEffect(() => {
+    let alive = true;
+    void me()
+      .then((player) => {
+        if (!alive) return;
+        if (player) applyPlayer(player);
+        else setStep('auth');
+      })
+      .catch(() => {
+        if (alive) setStep('auth');
+      });
+    return () => {
+      alive = false;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ⚠ 相依必須帶 `draft`。空陣列的話這個 handler 會永遠記得第一次算出來的
   //   `go`，於是 Ctrl+Shift+Enter 存進去的是打字之前的那個名字 —— 而畫面上
@@ -63,6 +104,16 @@ export function BootScreen() {
       </button>
 
       <div className="boot-card">
+        {step === 'checking' && (
+          <p className="boot-sub" data-testid="auth-checking">確認登入狀態…</p>
+        )}
+
+        {step === 'auth' && (
+          <LoginPanel onDone={applyPlayer} onGuest={() => setStep('profile')} />
+        )}
+
+        {step === 'profile' && (
+        <>
         <h1>數位廣場</h1>
         <p className="boot-sub">MAIA · 用走的，把虛擬貨幣的每一種看法走一遍</p>
 
@@ -95,6 +146,8 @@ export function BootScreen() {
             進入數位廣場
           </button>
         </div>
+        </>
+        )}
       </div>
 
       <p className="boot-esc">
