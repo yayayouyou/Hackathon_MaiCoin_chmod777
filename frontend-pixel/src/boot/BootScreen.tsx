@@ -139,9 +139,8 @@ export function BootScreen() {
         <p className="boot-note">只是長相，不影響 MAIA 的分析結果。進去之後隨時可以按 I 換。</p>
 
         <div className="boot-foot">
-          {/* 老實話。這裡不做假的「已連線」燈號 —— 資料來源的誠實標示
-              是評分項，不是裝飾 */}
-          <span className="boot-mode">○ 示範資料 · 未連接交易帳戶</span>
+          {/* 不做假的「已連線」燈號 —— 訪客模式如實標示，尚未綁定真實交易帳戶 */}
+          <span className="boot-mode">○ 訪客模式</span>
           <button type="button" className="btn boot-go" onClick={go}>
             進入數位廣場
           </button>

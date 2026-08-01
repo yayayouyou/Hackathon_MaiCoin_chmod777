@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react';
 import { getEvents, getNews } from '../../api';
 import { useAsync } from '../useAsync';
 import { Panel, AsyncState } from '../Panel';
-import { DemoData } from '../DemoData';
 import { PixelCover, eventCover, newsCover } from '../PixelCover';
 
 /** 官方消息與活動是同一種「左列表右詳情」，共用一份版面。 */
@@ -37,7 +36,6 @@ export function MaxNews() {
   const { data, loading, error, reload } = useAsync(() => getNews(), []);
   return (
     <Panel title="MAX 官方消息" accent="max" size="lg">
-      <DemoData what="MAX 官方公告" />
       <AsyncState loading={loading} error={error} onRetry={reload} />
       {data && (
         <SplitList
@@ -80,7 +78,6 @@ export function MaxEvents() {
   const { data, loading, error, reload } = useAsync(() => getEvents(), []);
   return (
     <Panel title="MAX 最新活動" accent="max" size="lg">
-      <DemoData what="MAX 活動資訊" />
       <AsyncState loading={loading} error={error} onRetry={reload} />
       {data && (
         <SplitList
