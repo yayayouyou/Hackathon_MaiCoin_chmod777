@@ -36,9 +36,9 @@
 | `mcp_server.py` | 舊的 stdio 全家桶(42 工具),給 Cursor / Claude Desktop 掛 |
 | `agent_ui/` | FastAPI 服務(25 條路由)+ 開發期內部終端 —— **不是產品前端**,見 `agent_ui/README.md` |
 | `analyst_sandbox/` | 唯讀 code-as-action 沙盒(無金鑰子行程 + AST 閘門) |
-| `scripts/` | `skill_healthcheck.py`(110 個工具一次全打,內建下單黑名單)· `contrast_audit.py` |
+| `scripts/` | `skill_healthcheck.py`(110 個工具一次全打,內建下單黑名單)· `contrast_audit.py` · `bedrock_check.py`(Bedrock 端到端連線檢查)· `aws_creds_import.sh` / `.ps1`(臨時憑證匯入) |
 | `tests/` | 44 檔 pytest |
-| `docs/` | `SKILLS.md` 工具清單 · `FRONTEND_HANDOFF.md` 前端接手文件 |
+| `docs/` | `ONBOARDING_AWS.md` AWS 打通指南 · `SKILLS.md` 工具清單 · `FRONTEND_HANDOFF.md` 前端接手文件 |
 
 ### 9 個 skill 家族
 
@@ -79,6 +79,8 @@ LLM_PROVIDER=openrouter   # Bedrock 額度或服務異常時的續命路徑
 三者共用 `agent/llm/base.py` 的 `LLMProvider` 介面,主迴圈零改動。`deploy/Dockerfile.agentcore` 已寫死 `LLM_PROVIDER=bedrock`。
 
 **保留三個供應商是刻意的** —— 那是開發環境與擴充介面,不是為了規避「限用 AWS 模型」。正式路徑走 Bedrock。
+
+第一次接 Bedrock(匯入黑客松臨時憑證、驗證、找出帳號實際可用的 model id)照 [`docs/ONBOARDING_AWS.md`](./docs/ONBOARDING_AWS.md) 走,約 5 分鐘。同一份文件也涵蓋 S3 報告匯出的設定。
 
 ### 金鑰
 
