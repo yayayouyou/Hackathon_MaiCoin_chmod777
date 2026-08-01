@@ -3,20 +3,24 @@ import { openPage, gameState, gotoWorld, waitForPanel, BASE } from './lib/harnes
 /** run.mjs 掃描 tests/*.mjs，套件名字從這裡讀（省略就用檔名）。 */
 export const title = '狀態與持久化';
 
-/** 錯誤狀態、金鑰不落地、收藏持久化。 */
+/** 錯誤狀態、金鑰不進瀏覽器、收藏持久化。 */
 export default async function state({ browser, ok }) {
-  // ── ?failApi=1 時每個面板都要有可讀的錯誤，不能是白畫面 ──
+  // ── 行情讀不到時要有可讀的錯誤，不能是白畫面 ──
+  //
+  // 行情已改接後端 /api/tickers。這條斷言要在「後端有起」與「後端沒起」兩種
+  // 環境下都成立，所以失敗必須由 ?failApi=1 強制製造 —— 靠「本機剛好沒開後端」
+  // 來讓它綠燈，等於後端一起來這條就失效。
   {
     const page = await openPage(browser, { query: '?failApi=1&fast=1' });
     await page.keyboard.press('KeyI');
     await page.waitForTimeout(1300);
     const text = await page.locator('.trade').textContent();
-    ok('failApi 時行情顯示錯誤而非白畫面', text.includes('連線失敗'),
+    ok('行情讀不到時顯示錯誤而非白畫面', text.includes('連線失敗'),
       text.slice(0, 30).replace(/\s+/g, ' '));
     await page.close();
   }
 
-  // ── 金鑰只存記憶體、收藏存 localStorage ──
+  // ── 不向使用者索取金鑰、帳戶失敗要有提示、收藏存 localStorage ──
   {
     const page = await openPage(browser);
     await page.evaluate(() => localStorage.clear());
@@ -25,16 +29,19 @@ export default async function state({ browser, ok }) {
 
     await page.keyboard.press('KeyI');
     await page.waitForTimeout(800);
-    await page.locator('input[type=text]').nth(1).fill('demo-access');
-    await page.locator('input[type=password]').fill('demo-secret');
-    // exact 不可省：HUD 那張角色卡的無障礙名稱含「○ 未連接 · 示範帳戶」，
-    // 而 getByRole 的 name 預設是子字串比對 —— 少了 exact 會同時命中兩顆
-    // 按鈕，Playwright 的 strict mode 直接丟例外，整支套件中斷。
+    // 簽名在後端做，瀏覽器不該持有交易所金鑰 —— 這個面板不能再出現密碼欄位。
+    ok('不再向使用者索取交易所金鑰',
+      (await page.locator('.trade input[type=password]').count()) === 0);
+    // exact 不可省：HUD 那張角色卡的無障礙名稱含「○ 未連接」，而 getByRole 的
+    // name 預設是子字串比對 —— 少了 exact 會同時命中兩顆按鈕，Playwright 的
+    // strict mode 直接丟例外，整支套件中斷。
     await page.getByRole('button', { name: '連接', exact: true }).click();
-    await page.waitForTimeout(1000);
-    ok('填入金鑰後持倉解鎖', await page.locator('.pos-table').isVisible());
-    ok('金鑰沒有寫進 localStorage',
-      await page.evaluate(() => !JSON.stringify(localStorage).toLowerCase().includes('demo-secret')));
+    await page.waitForTimeout(1200);
+    // 測試環境沒有後端，帳戶必定讀不到。要看到的是可讀的提示，
+    // 不是白畫面，更不是一張憑空生出來的持倉表。
+    const account = await page.locator('.trade .col').last().textContent();
+    ok('後端讀不到帳戶時顯示可讀提示', /連線失敗|無法|尚未|請先登入/.test(account),
+      account.slice(0, 40).replace(/\s+/g, ' '));
 
     await page.locator('.tabs button', { hasText: '收藏' }).click();
     await page.waitForTimeout(700);
@@ -66,7 +73,7 @@ export default async function state({ browser, ok }) {
     await page.waitForTimeout(1000);
     await page.keyboard.press('KeyI');
     await page.waitForTimeout(900);
-    ok('重整後金鑰清空、回到未連接', await page.locator('.gate-mask').first().isVisible());
+    ok('重整後回到未連接', await page.locator('.gate-mask').first().isVisible());
     await page.locator('.tabs button', { hasText: '收藏' }).click();
     await page.waitForTimeout(900);
     ok('重整後收藏還在', (await page.locator('.rank-row').count()) === 1,

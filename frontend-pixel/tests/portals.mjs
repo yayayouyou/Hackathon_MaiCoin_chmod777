@@ -41,9 +41,11 @@ export default async function portals({ browser, ok }) {
   const board = page.locator('.topic-board');
   ok('主題看板顯示房間主題', (await board.locator('b').textContent())?.includes('BTC'),
     await board.locator('b').textContent());
-  // 標籤與線上人數是 mock 的真實欄位，不是寫死的字串
+  // 標籤與線上人數是後端 RoomInfo 的真實欄位，不是寫死的字串。
+  // 不比對特定值：房間清單現在來自 /api/discussion-spaces，內容會隨資料變。
+  // 這條要守的是「這兩個欄位有一路傳到 DOM」，不是某一間房叫什麼名字。
   const meta = await board.locator('span').textContent();
-  ok('主題看板顯示標籤與線上人數', meta.includes('比特幣') && meta.includes('412'), meta);
+  ok('主題看板顯示標籤與線上人數', /\S/.test(meta) && /\d+\s*人/.test(meta), meta);
 
   // ── NPC 對話泡泡。輪播的，所以要等 ──
   const shown = page.locator('.npc-bubble:not([hidden])');

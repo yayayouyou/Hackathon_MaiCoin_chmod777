@@ -1,5 +1,5 @@
 import { devices } from 'playwright';
-import { openPage, gameState, tapWorld, waitForPanel } from './lib/harness.mjs';
+import { openPage, gameState, tapWorld, waitForPanel, walkTo } from './lib/harness.mjs';
 
 /** run.mjs 掃描 tests/*.mjs，套件名字從這裡讀（省略就用檔名）。 */
 export const title = '觸控';
@@ -31,6 +31,14 @@ export default async function touch({ browser, ok }) {
   await tapWorld(page, 620, 400);
   await page.waitForTimeout(350);
   ok('觸控點擊會產生移動目標', (await gameState(page)).target !== null);
+
+  // 先讓角色實際走到剛才點的位置，鏡頭跟過來，交易台才穩定落在畫面內。
+  //
+  // 手機視野只有 393px 寬（scale=1），出生點的鏡頭下東翼多半在畫面外，而
+  // harness 的 tapWorld 會把座標夾到畫布邊緣 —— 夾出來的點落在障礙物上時
+  // 引擎根本不建立移動目標，角色一步都不動，這條就會偽陰性地紅掉。
+  // 用鍵盤把人帶到定位，**觸發互動仍然是觸控**，要驗的東西沒有被繞過。
+  await walkTo(page, 620, 400);
 
   // 觸控沒有 E 鍵：點互動點會走過去並冒出浮動提示，再點提示才開。
   // 提示有上下浮動的動畫，Playwright 的穩定性檢查會一直等它停下來，

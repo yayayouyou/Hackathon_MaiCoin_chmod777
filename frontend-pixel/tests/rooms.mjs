@@ -1,4 +1,4 @@
-import { openPage, gameState, gotoWorld } from './lib/harness.mjs';
+import { openPage, gameState, walkTo } from './lib/harness.mjs';
 
 /** run.mjs 掃描 tests/*.mjs，套件名字從這裡讀（省略就用檔名）。 */
 export const title = '大廳站點';
@@ -10,13 +10,19 @@ export const title = '大廳站點';
  * 這一支同時是「主走道淨空」那條排版規則的驗證：五個站點分散在
  * x408..884、y320..460，全部用同一個 `openAt()` 走過去按 E。任何一件裝飾
  * 掉進走道，這裡就會有一條變成「(沒有面板)」—— 因為角色會卡在半路。
+ *
+ * ⚠ 走位一律用 walkTo（鍵盤）而不是點擊移動。東翼那四個站點在角色出生點的
+ *   鏡頭下都落在畫面外，而 harness 的 toScreen() 會把點擊夾到畫布邊緣 ——
+ *   夾出來的世界座標 (719,320) 剛好在障礙物上，引擎直接拒絕建立移動目標
+ *   （target 保持 null），角色一步都不會動。於是這四條長期紅著，看起來像
+ *   走道被擋，其實是測試自己點不到。
  */
 export default async function rooms({ browser, ok }) {
   const page = await openPage(browser);
 
   /** 走過去 → 按 E → 比對面板標題。點擊不再自動開，一律走近按鍵。 */
   const openAt = async (wx, wy, expect) => {
-    await gotoWorld(page, wx, wy);
+    await walkTo(page, wx, wy);
     await page.keyboard.press('KeyE');
     await page.waitForTimeout(1400);
     const n = await page.locator('.panel-head h2').count();
@@ -48,7 +54,7 @@ export default async function rooms({ browser, ok }) {
   //   `#hud-root` 的非模態 dock，所以這裡不能驗 `.panel-head h2` ——
   //   那正是這條斷言在 dock 化之後一直紅著沒人發現的原因。
   //   非模態是刻意的：agent 查工具的那 20–40 秒，世界要繼續跑。
-  await gotoWorld(page, 408, 320);
+  await walkTo(page, 408, 320);
   await page.keyboard.press('KeyE');
   await page.waitForTimeout(1200);
   ok('MAIA 開的是非模態 dock 而不是彈窗',

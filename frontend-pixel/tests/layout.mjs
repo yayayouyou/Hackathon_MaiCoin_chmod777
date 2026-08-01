@@ -1,4 +1,4 @@
-import { openPage, gotoWorld, waitForPanel } from './lib/harness.mjs';
+import { openPage, walkTo, waitForPanel } from './lib/harness.mjs';
 
 const SIZES = [
   [1440, 900, '桌機'],
@@ -67,12 +67,12 @@ export default async function layout({ browser, ok }) {
   // 討論串：內部捲動 + 輸入框固定在底部，在矮視窗下也要成立
   const page = await openPage(browser, { viewport: { width: 900, height: 560 } });
   // 走到討論區門前再按 E 開選房面板（點擊不再自動觸發，一律走近按鍵）
-  await gotoWorld(page, 288, 300);
+  await walkTo(page, 288, 300);
   await page.keyboard.press('KeyE');
   await waitForPanel(page);
   await page.locator('.rank-row').first().click();
   await page.waitForTimeout(1600);
-  await gotoWorld(page, 578, 292);
+  await walkTo(page, 578, 292);
   await page.keyboard.press('KeyE');
   await page.waitForTimeout(1400);
 
