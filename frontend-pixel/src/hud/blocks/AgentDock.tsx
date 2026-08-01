@@ -26,7 +26,7 @@ function renderAgentBody(text: string, charts: ChartItem[]): ReactNode {
             <div key={i} className="chat-msg chat-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(p.text) }} />
           );
         }
-        const node = chartSpecFor(p.item.tool, p.item.result);
+        const node = chartSpecFor(p.item.tool, p.item.result, p.item.args);
         return node ? (
           <div key={i} className="maia-viz" data-src={toolSource(p.item.tool)}>
             {node}
@@ -379,7 +379,7 @@ export function AgentDock() {
         {charts.length > 0 && (
           <div className="viz-list" data-testid="viz-list">
             {charts.map((c) => {
-              const node = chartSpecFor(c.tool, c.result);
+              const node = chartSpecFor(c.tool, c.result, c.args);
               return node ? (
                 <div key={c.id} className="maia-viz" data-src={toolSource(c.tool)}>
                   {node}

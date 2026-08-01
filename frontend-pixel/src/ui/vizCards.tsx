@@ -554,14 +554,76 @@ function Candles({ d }: { d: KlineData }): ReactNode {
   );
 }
 
+// ── G. 淨值折線（get_equity_curve）— 第二層 ─────────────────
+// dict：{ curve:[{value_twd, ...}], start/end/peak_value_twd, ... }。每點取 value_twd。
+export type EquityData = { values: number[]; end: number; up: boolean };
+
+export function normEquity(result: unknown): EquityData | null {
+  if (!isObj(result) || hasError(result)) return null;
+  const curve = Array.isArray(result.curve) ? result.curve : [];
+  const values = curve.map((p) => (isObj(p) ? toNum(p.value_twd) : NaN)).filter((n) => Number.isFinite(n));
+  if (values.length < 2) return null;
+  return { values, end: values[values.length - 1]!, up: values[values.length - 1]! >= values[0]! };
+}
+
+const fmtEq = (n: number): string => {
+  const a = Math.abs(n);
+  if (a >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+  return n.toFixed(0);
+};
+
+function EquityLine({ d }: { d: EquityData }): ReactNode {
+  const W = 220;
+  const H = 100;
+  const padT = 8;
+  const padR = 50;
+  const plotL = 2;
+  const plotW = W - padR - plotL;
+  const plotH = H - padT * 2;
+  const lo = Math.min(...d.values);
+  const hi = Math.max(...d.values);
+  const range = Math.max(1e-9, hi - lo);
+  const n = d.values.length;
+  const x = (i: number): number => plotL + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+  const y = (v: number): number => padT + (1 - (v - lo) / range) * plotH;
+  const col = d.up ? '#4ee88a' : '#ff4f78';
+  const pts = d.values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const base = (padT + plotH).toFixed(1);
+  const area = `${x(0).toFixed(1)},${base} ${pts} ${x(n - 1).toFixed(1)},${base}`;
+  return (
+    <div className="viz-eq">
+      <svg viewBox={`0 0 ${W} ${H}`} className="viz-kline-svg" role="img" aria-label="淨值曲線">
+        <polygon points={area} fill={col} fillOpacity={0.14} />
+        <polyline points={pts} fill="none" stroke={col} strokeWidth={1.5} />
+        <text x={W - padR + 3} y={(y(hi) + 6).toFixed(1)} className="viz-kline-axis">{fmtEq(hi)}</text>
+        <text x={W - padR + 3} y={(y(lo) - 1).toFixed(1)} className="viz-kline-axis">{fmtEq(lo)}</text>
+        <text x={W - padR + 3} y={(y(d.end) + 3).toFixed(1)} className="viz-kline-last" fill={col}>{fmtEq(d.end)}</text>
+      </svg>
+    </div>
+  );
+}
+
 // ── 分派 ────────────────────────────────────────────────────
-/** tool_result 的 name → 一張圖表卡（未實作的工具回 null，由 AgentDock 略過不渲染）。 */
-export function chartSpecFor(tool: string, result: unknown): ReactNode {
+/** 從 tool_call 的 args.market 或 result.market 取標的（大寫），給多圖區分用。 */
+const marketLabel = (result: unknown, args?: Record<string, unknown>): string => {
+  const raw =
+    args && typeof args.market === 'string'
+      ? args.market
+      : isObj(result) && typeof result.market === 'string'
+        ? result.market
+        : '';
+  return raw ? raw.toUpperCase() : '';
+};
+
+/** tool_result 的 name → 一張圖表卡（未實作的工具回 null，由 AgentDock 略過不渲染）。args 帶當初 tool_call 的參數（標的）。 */
+export function chartSpecFor(tool: string, result: unknown, args?: Record<string, unknown>): ReactNode {
+  const mkt = marketLabel(result, args);
   switch (tool) {
     case 'get_max_depth': {
       const d = normDepth(result);
       return (
-        <Frame eyebrow="流動性" title={`訂單簿 · ${d?.market ?? ''}`} tag="MAX">
+        <Frame eyebrow="流動性" title={`訂單簿${mkt ? ` · ${mkt}` : d?.market ? ` · ${d.market}` : ''}`} tag="MAX">
           {d ? <Orderbook d={d} /> : <Empty msg="這一輪沒有可畫的訂單簿資料" />}
         </Frame>
       );
@@ -601,8 +663,16 @@ export function chartSpecFor(tool: string, result: unknown): ReactNode {
     case 'get_max_klines': {
       const d = normKline(result);
       return (
-        <Frame eyebrow="行情" title="K 線" tag="MAX">
+        <Frame eyebrow="行情" title={`K 線${mkt ? ` · ${mkt}` : ''}`} tag="MAX">
           {d ? <Candles d={d} /> : <Empty msg="這一輪沒有可畫的 K 線資料" />}
+        </Frame>
+      );
+    }
+    case 'get_equity_curve': {
+      const d = normEquity(result);
+      return (
+        <Frame eyebrow="你的淨值" title="資產淨值曲線" tag="帳本">
+          {d ? <EquityLine d={d} /> : <Empty msg="這一輪沒有可畫的淨值資料" />}
         </Frame>
       );
     }

@@ -20,8 +20,8 @@ export type Msg = { id: number; who: 'agent' | 'me'; text: string; charts?: Char
 export type Chip = { id: number; name: string; source: SourceTag; ok: boolean | null };
 /** reader 攔截到疑似指令注入時留下的常駐警示（來源工具 + 命中的旗標名）。 */
 export type ReaderAlert = { id: number; source: string; flags: string[] };
-/** 一張圖表卡：留住 tool_result 的原始 result，交給 ui/vizCards 的 chartSpecFor 決定怎麼畫。 */
-export type ChartItem = { id: number; tool: string; result: unknown };
+/** 一張圖表卡：留住 tool_result 的原始 result + 當初 tool_call 的 args（給卡片標題/去重用）。 */
+export type ChartItem = { id: number; tool: string; result: unknown; args?: Record<string, unknown> };
 
 export type ChatState = {
   msgs: Msg[];
@@ -125,7 +125,21 @@ const CHARTABLE_TOOLS = new Set<string>([
   'get_trading_dna_score',
   'analyze_trading_behavior',
   'get_max_klines', // 第二層：K 線蠟燭圖
+  'get_equity_curve', // 第二層：淨值折線
 ]);
+
+// tool_call 的 args 暫存（name → 依序的 args 佇列），tool_result 時取回配對，供圖表標題/去重。每輪重置。
+let pendingArgs: Record<string, Array<Record<string, unknown>>> = {};
+
+/** 從 args.market 或 result.market 取標的，作為同工具多圖的去重鍵。 */
+function marketOf(tool: string, result: unknown, args?: Record<string, unknown>): string {
+  if (args && typeof args.market === 'string') return args.market;
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    const m = (result as { market?: unknown }).market;
+    if (typeof m === 'string') return m;
+  }
+  return tool; // 沒有標的的工具（帳戶/DNA/淨值…）→ 用工具名當鍵，同工具留最新一張
+}
 
 /**
  * 工具是否失敗。後端執行失敗時 tool_result 的 result 會是 `{ error: ... }`
@@ -180,6 +194,7 @@ export async function ask(question: string, model?: string): Promise<void> {
     { role: 'user', content: q },
   ];
 
+  pendingArgs = {};
   setLive('');
   emit({
     msgs: [...state.msgs, { id: Date.now(), who: 'me', text: q }],
@@ -202,6 +217,7 @@ export async function ask(question: string, model?: string): Promise<void> {
         pushHud('thinking', e.content);
         break;
       case 'tool_call':
+        (pendingArgs[e.name] ??= []).push(e.args ?? {});
         emit({
           chips: [
             ...state.chips,
@@ -220,9 +236,24 @@ export async function ask(question: string, model?: string): Promise<void> {
           next[i] = { ...next[i]!, ok };
           patch.chips = next;
         }
-        // 成功且是可畫圖的工具 → 留下 result 給圖表卡（過去這裡把 result 整包丟掉）
+        // 成功且可畫圖 → 留下 result（+配對的 tool_call args）；同工具同標的去重、保留最新一張
         if (ok && CHARTABLE_TOOLS.has(e.name) && e.result != null) {
-          patch.charts = [...state.charts, { id: state.charts.length, tool: e.name, result: e.result }];
+          const args = (pendingArgs[e.name] ?? []).shift();
+          const key = `${e.name}::${marketOf(e.name, e.result, args)}`;
+          const idx = state.charts.findIndex((c) => `${c.tool}::${marketOf(c.tool, c.result, c.args)}` === key);
+          const item: ChartItem = {
+            id: idx >= 0 ? state.charts[idx]!.id : state.charts.length,
+            tool: e.name,
+            result: e.result,
+            args,
+          };
+          if (idx >= 0) {
+            const next = [...state.charts];
+            next[idx] = item;
+            patch.charts = next;
+          } else {
+            patch.charts = [...state.charts, item];
+          }
         }
         if (Object.keys(patch).length > 0) emit(patch);
         pushHud('tool', toolLabel(e.name));
