@@ -56,6 +56,49 @@ def get_service_worker():
 # 核准端點 CSRF/來源防護：每次啟動產生一次性密鑰，僅透過『同源』/api/config 交給前端；
 # 跨源 CSRF 頁面因同源政策讀不到此值、也無法送自訂標頭（會觸發被拒的 CORS 預檢）。
 _APPROVAL_SECRET = secrets.token_urlsafe(24)
+_THREADS_SYNC_STOP = threading.Event()
+_THREADS_SYNC_THREAD: Optional[threading.Thread] = None
+
+
+def _threads_sync_interval() -> int:
+    raw = os.getenv("THREADS_SYNC_INTERVAL_SECONDS", "300")
+    try:
+        return max(60, int(raw))
+    except ValueError:
+        logger.warning("THREADS_SYNC_INTERVAL_SECONDS={!r} is invalid; using 300 seconds", raw)
+        return 300
+
+
+def _threads_auto_sync_loop() -> None:
+    """Low-frequency polling for the hackathon demo; manual sync remains available."""
+    interval = _threads_sync_interval()
+    while not _THREADS_SYNC_STOP.is_set():
+        try:
+            from agent_ui.threads_bridge import list_spaces, sync_mentions_to_spaces, sync_threads
+            sync_mentions_to_spaces()
+            for space in list_spaces():
+                sync_threads(space["id"])
+        except Exception:
+            logger.exception("Threads background sync failed; will retry later")
+        if _THREADS_SYNC_STOP.wait(interval):
+            break
+
+
+@app.on_event("startup")
+def start_threads_auto_sync() -> None:
+    global _THREADS_SYNC_THREAD
+    if os.getenv("THREADS_AUTO_SYNC", "false").strip().lower() not in {"1", "true", "yes"}:
+        return
+    if not os.getenv("THREADS_ACCESS_TOKEN") or (_THREADS_SYNC_THREAD and _THREADS_SYNC_THREAD.is_alive()):
+        return
+    _THREADS_SYNC_STOP.clear()
+    _THREADS_SYNC_THREAD = threading.Thread(target=_threads_auto_sync_loop, name="threads-auto-sync", daemon=True)
+    _THREADS_SYNC_THREAD.start()
+
+
+@app.on_event("shutdown")
+def stop_threads_auto_sync() -> None:
+    _THREADS_SYNC_STOP.set()
 
 
 def _require_approval_secret(x_approval_secret: Optional[str] = Header(default=None)) -> None:
@@ -119,6 +162,21 @@ class ProgressRequest(BaseModel):
     character: Optional[str] = None
     stance: Optional[str] = None
     favorites: Optional[List[str]] = None
+
+
+class ThreadsDiscussionPostRequest(BaseModel):
+    """A Threads-bridged reply. Author and publication policy come from session role."""
+    text: str
+    parent_post_id: Optional[str] = None
+
+
+class DiscussionSpaceRequest(BaseModel):
+    title: str
+    opening_text: str
+
+
+class DeleteThreadsRootRequest(BaseModel):
+    confirmation: str
 
 @app.get("/", response_class=HTMLResponse)
 def get_index():
@@ -856,6 +914,108 @@ def upload_report_to_s3(
         "download_url": url,
         "expires_in_seconds": 900,
     }
+
+
+@app.get("/api/discussions/{room_id}")
+def get_discussion(room_id: str):
+    """Return MAIA discussion posts, including imported Threads content."""
+    from agent_ui.threads_bridge import get_space, list_posts
+    space = get_space(room_id)
+    if not space or space.get("archived"):
+        raise HTTPException(status_code=404, detail="discussion space was not found")
+    posts = [post for post in list_posts(room_id) if post.get("kind") != "bridge" and post.get("text") != "此討論已同步至 MAIA 平台；可直接回覆本串。"]
+    return {"posts": posts}
+
+
+@app.get("/api/discussion-spaces")
+def get_discussion_spaces(include_archived: bool = False):
+    from agent_ui.threads_bridge import list_spaces
+    return {"spaces": list_spaces(include_archived)}
+
+
+@app.post("/api/discussion-spaces")
+def create_discussion_space(req: DiscussionSpaceRequest, username: str = Depends(auth.require_official)):
+    if not req.title.strip() or not req.opening_text.strip():
+        raise HTTPException(status_code=422, detail="title and opening_text are required")
+    try:
+        from agent_ui.threads_bridge import create_space
+        player = store.get_player(username) or {}
+        author = str(player.get("nickname") or username)
+        return {"space": create_space(req.title.strip(), author, req.opening_text.strip())}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.delete("/api/discussion-spaces/{room_id}")
+def archive_discussion_space(room_id: str, _: str = Depends(auth.require_official)):
+    from agent_ui.threads_bridge import archive_space, get_space
+    space = get_space(room_id)
+    if not space:
+        raise HTTPException(status_code=404, detail="discussion space not found")
+    if space.get("archived"):
+        raise HTTPException(status_code=409, detail="discussion space is already archived")
+    if not archive_space(room_id):
+        raise HTTPException(status_code=409, detail="discussion space could not be archived")
+    return {"ok": True, "archived": True, "room_id": room_id}
+
+
+@app.post("/api/discussions/{room_id}")
+def create_discussion_post(
+    room_id: str,
+    req: ThreadsDiscussionPostRequest,
+    username: str = Depends(auth.require_session),
+):
+    """Create a MAIA post and publish the authenticated author's reply to Threads."""
+    if not req.text.strip():
+        raise HTTPException(status_code=422, detail="text is required")
+    try:
+        from agent_ui.threads_bridge import create_platform_post
+        player = store.get_player(username)
+        if not player:
+            raise HTTPException(status_code=401, detail="找不到這個帳號。")
+        author = str(player.get("nickname") or username)
+        return {"post": create_platform_post(room_id, author, req.text.strip(), True, req.parent_post_id)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/discussions/{room_id}/sync")
+def sync_discussion_from_threads(
+    room_id: str,
+    _: str = Depends(auth.require_official),
+):
+    """Import mentions and replies from the official account's tracked Threads branches."""
+    try:
+        from agent_ui.threads_bridge import sync_threads
+        return {"ok": True, "imported": sync_threads(room_id)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/threads/sync-mentions")
+def sync_threads_mentions(_: str = Depends(auth.require_official)):
+    """Create one MAIA discussion space for every new @official Threads post."""
+    try:
+        from agent_ui.threads_bridge import sync_mentions_to_spaces
+        return {"ok": True, **sync_mentions_to_spaces()}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/admin/discussion-spaces/{room_id}/delete-threads-root")
+def delete_official_threads_root(
+    room_id: str,
+    req: DeleteThreadsRootRequest,
+    _: str = Depends(auth.require_official),
+):
+    """High-risk official action: delete MAIA's remote root and archive locally."""
+    if req.confirmation != "DELETE":
+        raise HTTPException(status_code=422, detail="confirmation must equal DELETE")
+    try:
+        from agent_ui.threads_bridge import delete_threads_root
+        return {"ok": True, **delete_threads_root(room_id)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/approve_order")

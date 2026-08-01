@@ -43,6 +43,10 @@ export type Post = {
   text: string;
   likes: number;
   self?: boolean;
+  source?: 'platform' | 'threads';
+  sourceAuthor?: string;
+  permalink?: string | null;
+  parentPostId?: string | null;
 };
 
 export type Quote = 'TWD' | 'USDT' | 'BTC';

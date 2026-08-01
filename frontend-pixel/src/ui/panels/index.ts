@@ -8,6 +8,7 @@ import { CharPanel } from './CharPanel';
 import { Strategies } from './Strategies';
 import { TradePanel } from './TradePanel';
 import { MaxSupport } from './MaxSupport';
+import { ThreadsAdmin } from './ThreadsAdmin';
 
 /**
  * ★ 全隊 append 點 2/4。
@@ -28,6 +29,7 @@ export const PANELS = {
   strategies: definePanel({ id: 'strategies', title: '策略牆', Component: Strategies }),
   trade: definePanel({ id: 'trade', title: 'MAX 現貨交易', Component: TradePanel }),
   maxSupport: definePanel({ id: 'maxSupport', title: 'MAX 官方客服', Component: MaxSupport }),
+  threadsAdmin: definePanel({ id: 'threadsAdmin', title: 'MAIA 官方社群管理', Component: ThreadsAdmin }),
 } as const satisfies Record<string, PanelDef>;
 
 export type PanelId = keyof typeof PANELS;
