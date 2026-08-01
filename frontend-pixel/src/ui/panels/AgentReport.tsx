@@ -1,19 +1,35 @@
 import { useState } from 'react';
-import { getReport } from '../../api';
+import { getReport, getRoomCommunityInsight } from '../../api';
 import { useAsync } from '../useAsync';
 import { Panel, AsyncState } from '../Panel';
 import { DemoData } from '../DemoData';
 import { useUI } from '../uiStore';
+import { CommunityInsightCard } from './CommunityInsightCard';
 
 type Tab = 'summary' | 'detail' | 'sources';
 
 export function AgentReport() {
   const { roomId, roomTitle } = useUI();
   const { data, loading, error, reload } = useAsync(() => getReport(roomId ?? ''), [roomId]);
+  const {
+    data: dailyInsight,
+    loading: insightLoading,
+    error: insightError,
+    reload: reloadInsight,
+  } = useAsync(() => roomId ? getRoomCommunityInsight(roomId) : Promise.resolve(null), [roomId]);
   const [tab, setTab] = useState<Tab>('summary');
 
   return (
-    <Panel title={`Agent 分析報告 · ${roomTitle}`} accent="violet" size="md">
+    <Panel title={`昨日社群摘要 · ${roomTitle}`} accent="violet" size="md">
+      <AsyncState loading={insightLoading} error={insightError} onRetry={reloadInsight} />
+      {!insightLoading && !insightError && !dailyInsight && (
+        <p className="muted" style={{ marginBottom: 16 }}>這個討論區昨日尚無可用摘要。</p>
+      )}
+      {dailyInsight && <CommunityInsightCard insight={dailyInsight} />}
+
+      <h3 style={{ fontSize: 12, letterSpacing: '0.14em', color: 'var(--cyan)', margin: '18px 0 10px' }}>
+        即時 Agent 分析
+      </h3>
       <DemoData what="房間情緒分析報告" />
       <AsyncState loading={loading} error={error} onRetry={reload} />
       {data && (

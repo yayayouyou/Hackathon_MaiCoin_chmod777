@@ -24,7 +24,7 @@ import { CommunityBrief } from './CommunityBrief';
 export const PANELS = {
   ranking: definePanel({ id: 'ranking', title: '熱門排行', Component: RankingBoard }),
   roomPicker: definePanel({ id: 'roomPicker', title: '選擇討論室', Component: RoomPicker }),
-  agentReport: definePanel({ id: 'agentReport', title: 'Agent 分析報告', Component: AgentReport }),
+  agentReport: definePanel({ id: 'agentReport', title: '昨日社群摘要', Component: AgentReport }),
   thread: definePanel({ id: 'thread', title: '玩家討論串', Component: Thread }),
   maxNews: definePanel({ id: 'maxNews', title: 'MAX 官方消息', Component: MaxNews }),
   maxEvents: definePanel({ id: 'maxEvents', title: 'MAX 最新活動', Component: MaxEvents }),

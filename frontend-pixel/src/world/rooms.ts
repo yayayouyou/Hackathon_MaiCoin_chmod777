@@ -419,8 +419,8 @@ export function makeDiscussionRoom(spec: DiscussionSpec): Room {
   const stations = [
     station({
       prop: { kind: 'terminal', x: 128, y: 210, accent },
-      label: '讀取 Agent 分析報告',
-      sign: '分析報告',
+      label: '查看昨日社群摘要',
+      sign: '昨日摘要',
       panel: 'agentReport',
     }),
     station({
