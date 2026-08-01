@@ -141,6 +141,9 @@ const GLYPHS: Record<string, readonly string[]> = {
   X: ['x...x', 'x...x', '.x.x.', '..x..', '.x.x.', 'x...x', 'x...x'],
   N: ['x...x', 'xx..x', 'x.x.x', 'x..xx', 'x...x', 'x...x', 'x...x'],
   T: ['xxxxx', '..x..', '..x..', '..x..', '..x..', '..x..', '..x..'],
+  // MAIA 的銘牌要刻在控制台上。它跟 MAX 的招牌是同一件事：那塊字是
+  // 場景的一部分，要跟著世界捲動、被光照到、被柱子擋住，所以走像素而不是 DOM。
+  I: ['xxxxx', '..x..', '..x..', '..x..', '..x..', '..x..', 'xxxxx'],
   $: ['..x..', '.xxxx', 'x.x..', '.xxx.', '..x.x', 'xxxx.', '..x..'],
   // 數字與正負號：討論室的情緒計要把 -100~100 直接寫在看板上。
   // 只用一條長條表示強弱的話，「偏多多少」永遠是模糊的。
@@ -207,4 +210,232 @@ export function textBars(
     const len = 4 + (s % Math.max(1, w - 6));
     ctx.fillRect(x, y + i * 3, len, 1);
   }
+}
+
+// ── 材質語彙（Task 4）────────────────────────────────────────
+//
+// 商業水準的像素美術不是把每個道具畫得更細，是建立一套所有道具
+// 共用的材質與光照語彙，然後用它重切一遍。
+
+/**
+ * 5 階明暗 ramp。每個材質一組，從最暗（輪廓/遮蔽）到最亮（高光）。
+ * 所有顏色都來自既有 PALETTE，不新增 key。
+ *
+ * 用法：`ctx.fillStyle = RAMP.metal[2]` 取中間階。
+ * bevelBox 是 2 階（只分亮暗），ramp 系統是 5 階 —— 這是視覺落差最大的
+ * 單一升級：2 階 = 程式繪圖，5 階 = 手繪感。
+ */
+export const RAMP = {
+  /** 中性石材（大廳地板、柱子基座） */
+  stone: [C['0'], C['4'], C.x, C.y, C['7']] as const,
+  /** 亮金屬（櫃檯、欄杆） */
+  metal: [C['0'], C['2'], C['3'], C['5'], C['6']] as const,
+  /** 暗金屬（機櫃、底座、框架） */
+  dark_metal: [C['0'], C['1'], C['2'], C['4'], C['5']] as const,
+  /** 暖木（吧台、長椅、便利貼牆底板） */
+  wood: [C['0'], C.e, C.g, C.b, C.c] as const,
+  /** MAX 品牌藍（終端機、代幣柱、信託櫃檯嵌條） */
+  brand: [C['0'], C.k, C.l, C.m, C.A] as const,
+} as const;
+
+export type RampId = keyof typeof RAMP;
+export type Ramp = readonly [string, string, string, string, string];
+
+// ── Bayer 4×4 有序抖色 ──────────────────────────────────────
+
+/**
+ * 4×4 Bayer 矩陣（歸一化到 0..15）。
+ * 有序抖色比隨機噪點更有「像素藝術」的感覺 —— 規則的圖樣在整數放大後
+ * 讀起來是材質紋理而不是雜訊。
+ */
+const BAYER4: readonly number[] = [
+  0, 8, 2, 10,
+  12, 4, 14, 6,
+  3, 11, 1, 9,
+  15, 7, 13, 5,
+];
+
+/**
+ * 回傳 (px, py) 在 Bayer 矩陣中的閾值（0..15）。
+ * 如果 `value` (0..15) >= 閾值，則該像素應被填色。
+ */
+export function bayerThreshold(px: number, py: number): number {
+  return BAYER4[(py & 3) * 4 + (px & 3)]!;
+}
+
+/** 快取的 4x4 抖色 tile（兩色交替），避免每幀重建。 */
+const ditherTileCache = new Map<string, CanvasPattern>();
+
+/**
+ * 取得一個 4×4 Bayer 抖色 pattern，在 threshold 以下的像素填 colorA，
+ * 以上填 colorB（透明則用 'clear'）。快取，只建一次。
+ */
+export function bayerPattern(
+  ctx: CanvasRenderingContext2D,
+  colorA: string,
+  colorB: string | 'clear',
+  threshold: number,
+): CanvasPattern {
+  const key = `${colorA}|${colorB}|${threshold}`;
+  const hit = ditherTileCache.get(key);
+  if (hit) return hit;
+  const tile = document.createElement('canvas');
+  tile.width = 4;
+  tile.height = 4;
+  const tc = tile.getContext('2d')!;
+  for (let py = 0; py < 4; py++) {
+    for (let px = 0; px < 4; px++) {
+      const t = BAYER4[py * 4 + px]!;
+      if (t < threshold) {
+        tc.fillStyle = colorA;
+        tc.fillRect(px, py, 1, 1);
+      } else if (colorB !== 'clear') {
+        tc.fillStyle = colorB;
+        tc.fillRect(px, py, 1, 1);
+      }
+    }
+  }
+  const pattern = ctx.createPattern(tile, 'repeat')!;
+  ditherTileCache.set(key, pattern);
+  return pattern;
+}
+
+/**
+ * 用 Bayer 抖色填一個矩形。threshold 0..16 控制密度：
+ * 0 = 全透明，16 = 完全填色。適合做漸層過渡或半透明陰影。
+ */
+export function ditherRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color: string,
+  threshold: number,
+): void {
+  if (threshold <= 0) return;
+  if (threshold >= 16) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+    return;
+  }
+  ctx.fillStyle = bayerPattern(ctx, color, 'clear', threshold);
+  ctx.fillRect(x, y, w, h);
+}
+
+/**
+ * 垂直方向的抖色漸層：從 `topThreshold` 到 `bottomThreshold`。
+ * 把一個矩形分成若干水平帶，每帶的 threshold 線性插值。
+ * 適合牆腳 AO、光柱淡出。
+ */
+export function ditherGradientV(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color: string,
+  topThreshold: number,
+  bottomThreshold: number,
+): void {
+  // 每 2px 一個帶，減少 pattern 切換次數
+  const step = 2;
+  for (let row = 0; row < h; row += step) {
+    const t = row / Math.max(1, h - 1);
+    const th = Math.round(topThreshold + (bottomThreshold - topThreshold) * t);
+    ditherRect(ctx, x, y + row, w, Math.min(step, h - row), color, th);
+  }
+}
+
+// ── 接地與邊緣光 ────────────────────────────────────────────
+
+/**
+ * 接觸陰影：道具腳底的抖色橢圓。
+ *
+ * 現在道具是「貼在地上」的，有接觸陰影才是「站在地上」。
+ * 用 Bayer 抖色而不是半透明，在整數放大後不會產生灰色中間值。
+ */
+export function contactShadow(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  density = 10,
+): void {
+  ctx.save();
+  ctx.fillStyle = bayerPattern(ctx, C['0'], 'clear', density);
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * 邊緣光（rim light）：受光側（左上）1px 描邊。
+ *
+ * 這是 AAA 像素美術最明顯的特徵之一。在 bevelBox 的基礎上，
+ * 外框的左上邊再多畫一條亮色線，讓物件從背景「跳」出來。
+ */
+export function rimLight(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color: string,
+  alpha = 0.6,
+): void {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  // 左邊
+  ctx.fillRect(x, y + 1, 1, h - 2);
+  // 上邊
+  ctx.fillRect(x + 1, y, w - 2, 1);
+  ctx.restore();
+}
+
+/**
+ * 1-bit 顆粒噪點：在矩形內依 Bayer + 座標偏移撒幾個亮/暗點。
+ * 讓平坦的大面積填色看起來有「材質」而不是純色塊。
+ */
+export function grain(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color: string,
+  density = 4,
+  alpha = 0.3,
+): void {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  for (let py = 0; py < h; py += 2) {
+    for (let px = 0; px < w; px += 2) {
+      if (bayerThreshold(x + px, y + py) < density) {
+        ctx.fillRect(x + px, y + py, 1, 1);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+// ── 動畫相位 ────────────────────────────────────────────────
+
+/**
+ * 由座標推出的穩定相位偏移。
+ *
+ * 讓同一種道具（如三台礦機）各自錯開閃爍，不再像同一個貼圖複製三次。
+ * 回傳值約 0..6.28（一個週期），加在 `t` 上即可。
+ *
+ * 注意：這個 hash 跟 props.ts 裡的 `hash()` 是同一個演算法，但那邊
+ * 沒有 export。這裡重新寫一份是因為 shapes.ts 是 props.ts 的上游依賴，
+ * 反過來 import 會造成循環。
+ */
+export function phaseOf(x: number, y: number): number {
+  const h = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) >>> 0;
+  return (h % 1000) / 1000 * Math.PI * 2;
 }

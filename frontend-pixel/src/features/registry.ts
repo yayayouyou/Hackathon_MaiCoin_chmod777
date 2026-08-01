@@ -49,7 +49,7 @@ export const FEATURES: Feature[] = [
     accent: 'cyan',
     glyph: 'RK',
     panel: 'ranking',
-    place: { zone: 'lobby', wx: 480, wy: 238 },
+    place: { zone: 'guild', wx: 180, wy: 192 },
   },
   {
     id: 'rooms',
@@ -71,7 +71,7 @@ export const FEATURES: Feature[] = [
     accent: 'amber',
     glyph: 'SW',
     panel: 'strategies',
-    place: { zone: 'lobby', wx: 244, wy: 206 },
+    place: { zone: 'guild', wx: 444, wy: 196 },
   },
   {
     id: 'trade',
@@ -79,9 +79,12 @@ export const FEATURES: Feature[] = [
     hint: '行情 · 下單預覽 · 持倉',
     keys: 'trade 交易 下單 買 賣 order',
     group: 'account',
-    accent: 'green',
+    accent: 'max',
     glyph: 'TR',
-    panel: 'char',
+    panel: 'trade',
+    // 大廳東翼 MAX 官方區的第一站。落點抄自 `makeLobby()` 的
+    // frontOf(600,240,96,56) = (592,270,112,60)，站位在 (648,326)。
+    place: { zone: 'lobby', wx: 648, wy: 320 },
   },
   {
     id: 'maxNews',
@@ -92,7 +95,8 @@ export const FEATURES: Feature[] = [
     accent: 'max',
     glyph: 'NW',
     panel: 'maxNews',
-    place: { zone: 'lobby', wx: 616, wy: 198 },
+    // frontOf(728,216,76,80) = (720,270,92,60)，站位在 (766,326)
+    place: { zone: 'lobby', wx: 766, wy: 320 },
   },
   {
     id: 'maxEvents',
@@ -103,7 +107,21 @@ export const FEATURES: Feature[] = [
     accent: 'max',
     glyph: 'EV',
     panel: 'maxEvents',
-    place: { zone: 'lobby', wx: 728, wy: 198 },
+    // frontOf(836,212,96,84) = (828,270,112,60)，站位在 (884,326)
+    place: { zone: 'lobby', wx: 884, wy: 320 },
+  },
+  {
+    id: 'maxSupport',
+    label: '官方客服',
+    hint: '入金出金 · 手續費 · API · 帳戶安全',
+    keys: 'support 客服 幫助 help faq 問題 入金 出金 手續費',
+    group: 'system',
+    accent: 'max',
+    glyph: 'CS',
+    panel: 'maxSupport',
+    // 客服辦公區在東翼南側，站位在辦公室前庭 (836,466)。
+    // frontOf(768,348,136,88) = (760,410,152,60)
+    place: { zone: 'lobby', wx: 836, wy: 460 },
   },
   {
     id: 'agentChat',
@@ -111,10 +129,14 @@ export const FEATURES: Feature[] = [
     hint: '問它任何事,它會自己去查',
     keys: 'agent chat 對話 ai maia 助理 問',
     group: 'analysis',
-    accent: 'max',
+    // MAIA 在世界裡是紫的，不是 MAX 藍 —— 它是我們自己的 agent，
+    // 不是交易所的一個櫃檯。大廳裡它離 MAX 官方區 160px 遠、光池是全場
+    // 唯一的紫色，這一格的顏色跟著世界走才不會互相矛盾。
+    accent: 'violet',
     glyph: 'AI',
     panel: 'agentChat',
-    place: { zone: 'lobby', wx: 760, wy: 284 },
+    // frontOf(376,216,64,80) = (368,270,80,60)，站位在 (408,326)
+    place: { zone: 'lobby', wx: 408, wy: 320 },
   },
   // …隊友各自往下加一筆
 ];

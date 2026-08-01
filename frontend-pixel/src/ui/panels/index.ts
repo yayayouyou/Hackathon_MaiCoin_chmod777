@@ -6,6 +6,8 @@ import { MaxNews, MaxEvents } from './Max';
 import { AgentChat } from './AgentChat';
 import { CharPanel } from './CharPanel';
 import { Strategies } from './Strategies';
+import { TradePanel } from './TradePanel';
+import { MaxSupport } from './MaxSupport';
 
 /**
  * ★ 全隊 append 點 2/4。
@@ -13,9 +15,6 @@ import { Strategies } from './Strategies';
  * 新增一個面板 = 上面一行 import + 下面一行 key。`App.tsx` 永遠不用改。
  * `as const satisfies` + `keyof typeof` 讓 PanelId 自動長出來，打錯字是
  * 紅色編譯錯誤而不是執行期的空面板。
- *
- * ⚠ `Trade` 不在這裡：它是 `CharPanel` 交易分頁裡的子元件，不是一個
- *   可以獨立開啟的彈窗。要讓它獨立成面板，包一層 `<Panel>` 再註冊。
  */
 export const PANELS = {
   ranking: definePanel({ id: 'ranking', title: '熱門排行', Component: RankingBoard }),
@@ -27,6 +26,8 @@ export const PANELS = {
   agentChat: definePanel({ id: 'agentChat', title: 'MAIA 對話', Component: AgentChat }),
   char: definePanel({ id: 'char', title: '角色訊息窗', Component: CharPanel }),
   strategies: definePanel({ id: 'strategies', title: '策略牆', Component: Strategies }),
+  trade: definePanel({ id: 'trade', title: 'MAX 現貨交易', Component: TradePanel }),
+  maxSupport: definePanel({ id: 'maxSupport', title: 'MAX 官方客服', Component: MaxSupport }),
 } as const satisfies Record<string, PanelDef>;
 
 export type PanelId = keyof typeof PANELS;

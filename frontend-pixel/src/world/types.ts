@@ -58,6 +58,25 @@ export type Prop =
   | { kind: 'trustdesk'; x: number; y: number; w: number }
   /** MAX Token 鎖倉展示柱 */
   | { kind: 'maxtoken'; x: number; y: number }
+  // ── 大廳中軸 ──
+  /** 現貨交易台：行情看板 + 下單櫃檯 */
+  | { kind: 'tradedesk'; x: number; y: number }
+  // ── 大廳的功能站點專屬道具 ──
+  //
+  // 這四件是「一個功能一個造型」。原本公告與活動共用 `terminal`（同一台
+  // 機殼、同一片資料流），MAIA 與客服共用 `counter`（同一條檯面）——
+  // 四個功能兩種外觀，遠遠看過去只知道「那裡有台機器」，不知道是哪一個。
+  // 站牌上的中文得走近才讀得到，所以辨識的重擔其實全落在剪影上。
+  /** MAIA 智慧核心：懸浮全息核心 + 弧形控制台 + MAIA 銘牌。紫色 = AI，跟 MAX 的藍分開 */
+  | { kind: 'maiapod'; x: number; y: number }
+  /** 公告塔：頂端滾動標題燈條 + 玻璃公告櫃裡的紙本公告 + 官方鋼印 */
+  | { kind: 'newsboard'; x: number; y: number }
+  /** 活動舞台：三角旗串 + 倒數看板 + 抬高的舞台 + 獎品箱與轉盤 + 紙花 */
+  | { kind: 'eventstage'; x: number; y: number }
+  /** MAX 官方客服辦公區：玻璃隔屏 + 後場兩張辦公桌 + 叫號螢幕 + 服務櫃檯 */
+  | { kind: 'supportdesk'; x: number; y: number; w: number }
+  /** 排隊動線欄杆：立柱 + 伸縮帶。客服辦公區的候位動線 */
+  | { kind: 'queuerail'; x: number; y: number }
   // ── 討論室 ──
   /** 主題看板 + 情緒計。中文由 worldLabels 疊在看板的深色面板上 */
   | { kind: 'topicboard'; x: number; y: number; sentiment: number }
@@ -88,6 +107,12 @@ export const PROP_SIZE: Record<Prop['kind'], { w: number; h: number }> = {
   maxtoken: { w: 48, h: 68 },
   topicboard: { w: 144, h: 64 },
   noteboard: { w: 88, h: 52 },
+  tradedesk: { w: 96, h: 56 },
+  maiapod: { w: 64, h: 80 },
+  newsboard: { w: 76, h: 80 },
+  eventstage: { w: 96, h: 84 },
+  supportdesk: { w: 0, h: 88 }, // 寬度由 prop 自帶
+  queuerail: { w: 32, h: 30 },
 };
 
 /** 踩上去就觸發：可能是換場景，也可能是開一個面板。 */
@@ -139,6 +164,9 @@ export type Interactable = {
   run?: () => void;
 };
 
+/** 地面徽章。`coin` 是錢幣邊齒，`max` 是 MAX 字樣。 */
+export type Emblem = { x: number; y: number; r: number; kind?: 'coin' | 'max' };
+
 export type NpcSpec = {
   x: number;
   y: number;
@@ -163,12 +191,16 @@ export type Room = {
    * 地板材質。`plaza` 是明亮的石板廣場（大廳），`tech` 是深色科技磚。
    * 三個房間若共用同一塊地板，光的顏色再怎麼換都還是同一個空間。
    */
-  floor?: 'tech' | 'plaza' | 'maxstone';
+  floor?: 'tech' | 'plaza' | 'maxstone' | 'guild';
   /**
    * 地面徽章：畫在地板上、所有立體物件之下的圓形紋樣。
-   * `coin` 是錢幣邊齒（大廳），`max` 是 MAX 的字樣徽章（情報室）。
+   *
+   * 是**陣列**而不是單一件：一個大空間可以有好幾個「這一區是誰的」的地面
+   * 標記。大廳用兩枚 —— 中庭的錢幣徽章是全場的地標，東翼走道上的 MAX 徽章
+   * 是「你踏進交易所的地盤了」。地面標記比多加幾件道具便宜太多，而且它
+   * 畫在所有立體物件之下，不會跟走位打架。
    */
-  emblem?: { x: number; y: number; r: number; kind?: 'coin' | 'max' };
+  emblems?: Emblem[];
   /**
    * 暖色地毯的範圍（討論室用）。
    *

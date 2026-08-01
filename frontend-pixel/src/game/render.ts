@@ -11,15 +11,18 @@ import {
   WALL_FACE,
   TRIM,
   CARPET,
+  GUILD,
+  GUILD_ALT,
+  SKIRT,
 } from '../art/tiles';
 import { drawProp, propFootY, propSize, propLights, ACCENT, type Light } from './props';
-import { checkerPattern, glyphText, glyphWidth, GLYPH_H } from './shapes';
+import { checkerPattern, glyphText, glyphWidth, GLYPH_H, phaseOf } from './shapes';
 import { overlaps } from './collision';
 import { drawPlayer, CHAR_W, CHAR_H, type Player } from './player';
 import { drawNpc, type Npc } from './npc';
 import { deadzoneRect, type Camera } from './camera';
 import { PALETTE as C } from '../art/palette';
-import type { Room } from '../world/types';
+import type { Emblem, Room } from '../world/types';
 
 const T: Record<string, Sprite> = {
   floor: makeSprite(FLOOR),
@@ -32,6 +35,9 @@ const T: Record<string, Sprite> = {
   wallFace: makeSprite(WALL_FACE),
   trim: makeSprite(TRIM),
   carpet: makeSprite(CARPET),
+  guild: makeSprite(GUILD),
+  guildAlt: makeSprite(GUILD_ALT),
+  skirt: makeSprite(SKIRT),
 };
 
 /** 上方牆佔兩格：頂蓋 + 立面。左右下各一格矮邊牆。 */
@@ -57,7 +63,7 @@ export function drawRoom(
 
   // y 排序：腳底越下面的越晚畫，角色才會正確地被柱子擋住或擋住柱子
   const layers: { footY: number; draw: () => void }[] = [];
-  for (const p of room.props) layers.push({ footY: propFootY(p), draw: () => drawProp(ctx, p, t) });
+  for (const p of room.props) layers.push({ footY: propFootY(p), draw: () => drawProp(ctx, p, t + phaseOf(p.x, p.y)) });
   for (const n of npcs) layers.push({ footY: n.y, draw: () => drawNpc(ctx, n) });
   layers.push({ footY: player.y, draw: () => drawPlayer(ctx, player) });
   layers.sort((a, b) => a.footY - b.footY);
@@ -207,7 +213,9 @@ function drawFloor(ctx: CanvasRenderingContext2D, room: Room, cam: Camera) {
       ? [T.maxFloor!, T.maxFloorAlt!]
       : room.floor === 'plaza'
         ? [T.plaza!, T.plazaAlt!]
-        : [T.floor!, T.floorAlt!];
+        : room.floor === 'guild'
+          ? [T.guild!, T.guildAlt!]
+          : [T.floor!, T.floorAlt!];
   // 嵌線的顏色就是房間的身分：大廳黃銅、MAX 品牌藍
   const inlay = room.floor === 'plaza' ? C.q : room.floor === 'maxstone' ? C.A : null;
 
@@ -271,7 +279,7 @@ function drawFloor(ctx: CanvasRenderingContext2D, room: Room, cam: Camera) {
     ctx.restore();
   }
 
-  if (room.emblem) drawEmblem(ctx, room.emblem);
+  if (room.emblems) for (const e of room.emblems) drawEmblem(ctx, e);
 }
 
 /**
@@ -280,10 +288,7 @@ function drawFloor(ctx: CanvasRenderingContext2D, room: Room, cam: Camera) {
  * 大廳最難處理的不是道具不夠，是地面太空。一圈紋樣就能把空曠的地面收成
  * 一個「中央」，成本只有幾十個 fillRect —— 這是大型公共空間最省的構圖手法。
  */
-function drawEmblem(
-  ctx: CanvasRenderingContext2D,
-  e: { x: number; y: number; r: number; kind?: 'coin' | 'max' },
-) {
+function drawEmblem(ctx: CanvasRenderingContext2D, e: Emblem) {
   const max = e.kind === 'max';
   const hi = max ? C.A : C.p;
   const lo = max ? C.m : C.q;
@@ -338,6 +343,13 @@ function drawWalls(ctx: CanvasRenderingContext2D, room: Room, cam: Camera) {
   for (let ty = Math.max(y0, 2); ty < Math.min(y1, rows - 1); ty++) {
     drawSprite(ctx, T.trim!, 0, ty * TILE);
     drawSprite(ctx, T.trim!, (cols - 1) * TILE, ty * TILE);
+  }
+
+  // 牆腳收邊帶（skirt）：牆與地板交接處的 AO 過渡。
+  // 讓牆「長在地板上」而不是兩張貼圖剛好擺在旁邊。
+  // 上牆底部（y = WALL_TOP_H）
+  for (let tx = x0; tx < x1; tx++) {
+    drawSprite(ctx, T.skirt!, tx * TILE, WALL_TOP_H);
   }
 }
 

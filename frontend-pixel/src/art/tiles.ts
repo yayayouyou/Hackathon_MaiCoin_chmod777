@@ -234,6 +234,77 @@ export const CARPET = [
   'vvvvvvvvvvvvvvvv',
 ];
 
+/**
+ * 交易者公會地板：暖色木板。
+ *
+ * 用 e/g/b 這組（頭髮棕→深棕→淺膚），橫向排列模擬木紋方向。
+ * 每 4 行為一條木板，板間 1px 深色接縫。跟大廳冷灰石板、
+ * 討論室科技磚形成三種截然不同的材質。
+ */
+export const GUILD = [
+  'gggbggggggggggge',
+  'ggggggggggbgggge',
+  'ggggggggggggggge',
+  'eeeeeeeeeeeeeeee',
+  'gggggggbggggggge',
+  'ggbgggggggggggge',
+  'ggggggggggggggge',
+  'eeeeeeeeeeeeeeee',
+  'ggggggggggbgggge',
+  'gggggggggggggbge',
+  'ggggggggggggggge',
+  'eeeeeeeeeeeeeeee',
+  'gbggggggggggggge',
+  'ggggggbgggggggge',
+  'ggggggggggggggge',
+  'eeeeeeeeeeeeeeee',
+];
+
+export const GUILD_ALT = [
+  'gggggggggbggggge',
+  'ggggggggggggggge',
+  'gggbggggggggggge',
+  'eeeeeeeeeeeeeeee',
+  'ggggggggggggbgge',
+  'ggggggggggggggge',
+  'ggbgggggggggggge',
+  'eeeeeeeeeeeeeeee',
+  'ggggggbgggggggge',
+  'ggggggggggggggge',
+  'gggggggggggbggge',
+  'eeeeeeeeeeeeeeee',
+  'ggggggggggggggge',
+  'ggggbgggggggggge',
+  'ggggggggggggggge',
+  'eeeeeeeeeeeeeeee',
+];
+
+/**
+ * 牆腳收邊帶：牆與地板交接處的 AO（環境遮蔽）過渡。
+ *
+ * 上半是跟牆同色的深色，往下逐漸變淡消失。這讓牆「長在地板上」，
+ * 而不是兩張貼圖剛好擺在旁邊。用 0/1/2 三個最深的中性色做漸層。
+ * 只有 8px 高（半格），放在牆的下緣覆蓋。
+ */
+export const SKIRT = [
+  '0000000000000000',
+  '0000000000000000',
+  '1010101010101010',
+  '1010101010101010',
+  '0101010101010101',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+
 export const TILE_ROWS = {
   FLOOR,
   FLOOR_ALT,
@@ -245,4 +316,7 @@ export const TILE_ROWS = {
   WALL_FACE,
   TRIM,
   CARPET,
+  GUILD,
+  GUILD_ALT,
+  SKIRT,
 };

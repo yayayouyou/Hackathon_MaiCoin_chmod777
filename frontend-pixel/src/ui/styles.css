@@ -1272,6 +1272,56 @@ article h3 { font-size: 15px; margin-bottom: 4px; }
 
 .boot-esc kbd { margin-right: 2px; }
 
+/* ── 進場第一步：帳號 ── */
+
+/* 登入/註冊切換。兩個 tab 而不是一句「還沒有帳號？」連結：
+   註冊與登入在這裡是同等重要的入口，評審多半是第一次來。 */
+.boot-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 20px;
+}
+
+.boot-tab {
+  padding: 6px 16px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--line);
+}
+
+.boot-tab.is-on {
+  color: var(--bg);
+  background: var(--cyan);
+  border-color: var(--cyan);
+}
+
+.boot-err {
+  margin-top: 12px;
+  padding: 7px 10px;
+  font-size: 11px;
+  color: var(--bg);
+  background: var(--rose);
+}
+
+.boot-guest {
+  padding: 5px 0;
+  font-size: 11px;
+  color: var(--dim);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.boot-guest:hover { color: var(--txt); }
+
+.boot-go:disabled {
+  cursor: default;
+  filter: grayscale(0.6) brightness(0.8);
+}
+
 /* 窄畫面：四張並排會壓到每張只剩 60px，字會斷成兩行以上 */
 @media (max-width: 460px) {
   .char-grid { grid-template-columns: repeat(2, 1fr); }

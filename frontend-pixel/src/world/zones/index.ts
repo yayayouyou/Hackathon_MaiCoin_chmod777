@@ -1,5 +1,6 @@
 import { lobby } from './lobby';
 import { discussion } from './discussion';
+import { guild } from './guild';
 import type { ZoneDef } from '../../engine/zone';
 
 /**
@@ -16,6 +17,7 @@ import type { ZoneDef } from '../../engine/zone';
 export const ZONES = {
   lobby,
   discussion,
+  guild,
 } as const satisfies Record<string, ZoneDef>;
 
 export type ZoneId = keyof typeof ZONES;

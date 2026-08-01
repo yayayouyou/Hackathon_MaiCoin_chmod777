@@ -9,6 +9,10 @@ import {
   glyphWidth,
   METAL,
   DARK_METAL,
+  RAMP,
+  contactShadow,
+  rimLight,
+  grain,
 } from './shapes';
 import { drawShadow } from './sprite';
 import type { Accent, Prop, Rect } from '../world/types';
@@ -116,6 +120,20 @@ export function propLights(p: Prop): Light[] {
       return [{ x: p.x + 72, y: p.y + 60, r: 132, color: sentimentColor(p.sentiment).hi, strength: 0.95 }];
     case 'noteboard':
       return [{ x: p.x + 44, y: p.y + 48, r: 62, color: C.p, strength: 0.45 }];
+    case 'tradedesk':
+      return [{ x: p.x + 48, y: p.y + 50, r: 88, color: C.A, strength: 0.85 }];
+    // MAIA 的光池是紫的，而且刻意比 MAX 那幾件大一圈。
+    // 這是全場唯一一處紫光 —— 光的顏色就是「這不是 MAX 的東西」的說明。
+    case 'maiapod':
+      return [{ x: p.x + 32, y: p.y + 68, r: 96, color: C.t, strength: 0.95 }];
+    case 'newsboard':
+      return [{ x: p.x + 38, y: p.y + 70, r: 72, color: C.A, strength: 0.75 }];
+    // 活動用琥珀色而不是品牌藍：這一區的情緒是「有事在辦、快來」，
+    // 跟旁邊冷靜的公告塔擺在一起才分得出誰是誰。
+    case 'eventstage':
+      return [{ x: p.x + 48, y: p.y + 74, r: 90, color: C.p, strength: 0.9 }];
+    case 'supportdesk':
+      return [{ x: p.x + p.w / 2, y: p.y + 78, r: 100, color: C.A, strength: 0.8 }];
     // 螢幕牆與跑馬燈都是一整條，用單一點光源會變成中間一顆亮斑；
     // 拆成每段一個小光源，才會是連續的一整條光帶。
     case 'screenwall': {
@@ -189,6 +207,18 @@ export function drawProp(ctx: CanvasRenderingContext2D, p: Prop, t: number): voi
       return topicboard(ctx, p.x, p.y, p.sentiment, t);
     case 'noteboard':
       return noteboard(ctx, p.x, p.y, t);
+    case 'tradedesk':
+      return tradedesk(ctx, p.x, p.y, t);
+    case 'maiapod':
+      return maiapod(ctx, p.x, p.y, t);
+    case 'newsboard':
+      return newsboard(ctx, p.x, p.y, t);
+    case 'eventstage':
+      return eventstage(ctx, p.x, p.y, t);
+    case 'supportdesk':
+      return supportdesk(ctx, p.x, p.y, p.w, t);
+    case 'queuerail':
+      return queuerail(ctx, p.x, p.y);
   }
 }
 
@@ -236,6 +266,27 @@ export function propSolid(p: Prop): Rect | null {
       return { x: p.x + 10, y: p.y + 48, w: 124, h: 16 };
     case 'noteboard':
       return { x: p.x + 8, y: p.y + 36, w: 72, h: 14 };
+    case 'tradedesk':
+      return { x: p.x + 8, y: p.y + 34, w: 80, h: 14 };
+    case 'maiapod':
+      return { x: p.x + 12, y: p.y + 58, w: 40, h: 16 };
+    case 'newsboard':
+      return { x: p.x + 10, y: p.y + 62, w: 56, h: 16 };
+    case 'eventstage':
+      return { x: p.x + 8, y: p.y + 64, w: 80, h: 16 };
+    /**
+     * 客服辦公區的碰撞盒只框住「櫃檯那一塊」，左右各留 24 / 16px 的缺口。
+     *
+     * 這不是美觀問題，是**走位**問題：辦公區在南側，玩家的站位在它更南邊，
+     * 從出生點過去是一條西北→東南的斜線。碰撞盒若跟道具一樣寬，那條斜線
+     * 會先撞上辦公區自己的檯面（症狀是走到一半卡住、提示指向別的東西）。
+     * 留出西側的缺口，斜線就從辦公區的「門口」進前庭 —— 而畫面上那裡
+     * 本來就畫著一道敞開的側門，碰撞與畫面說的是同一件事。
+     */
+    case 'supportdesk':
+      return { x: p.x + 24, y: p.y + 66, w: p.w - 40, h: 18 };
+    case 'queuerail':
+      return { x: p.x + 4, y: p.y + 22, w: 8, h: 8 };
     // 傳送門、掛在牆上的螢幕與跑馬燈都不擋路
     case 'portal':
     case 'screenwall':
@@ -253,10 +304,28 @@ export function propSolid(p: Prop): Rect | null {
 const WOOD = { fill: C.g, light: C.b, dark: C.f, line: C['0'] };
 
 function pillar(ctx: CanvasRenderingContext2D, x: number, y: number) {
-  drawShadow(ctx, x + 8, y + 55, 10, 4);
-  bevelBox(ctx, x + 1, y, 14, 52, METAL); // 柱身
-  // 中央嵌一條霧面燈條。原本這裡是兩道深色溝縫，於是柱子成了全場唯一
-  // 完全不發光的道具 —— 站在它旁邊會覺得畫面破了一個黑洞。
+  // 接觸陰影：道具落在地上而不是貼在地上
+  contactShadow(ctx, x + 8, y + 55, 10, 4);
+
+  // 柱身：5 階金屬 ramp 代替 2 階 bevelBox
+  const r = RAMP.metal;
+  ctx.fillStyle = r[0]; // 輪廓
+  ctx.fillRect(x + 1, y, 14, 52);
+  ctx.fillStyle = r[2]; // 主體
+  ctx.fillRect(x + 2, y + 1, 12, 50);
+  // 受光面（左邊 2px）
+  ctx.fillStyle = r[3];
+  ctx.fillRect(x + 2, y + 1, 2, 50);
+  // 高光線（最左 1px）
+  ctx.fillStyle = r[4];
+  ctx.fillRect(x + 2, y + 2, 1, 48);
+  // 暗面（右邊 2px）
+  ctx.fillStyle = r[1];
+  ctx.fillRect(x + 12, y + 1, 2, 50);
+  // 表面顆粒（金屬質感）
+  grain(ctx, x + 4, y + 2, 8, 48, r[4], 2, 0.2);
+
+  // 中央嵌一條霧面燈條
   ctx.fillStyle = C['1'];
   ctx.fillRect(x + 5, y + 3, 1, 44);
   ctx.fillRect(x + 10, y + 3, 1, 44);
@@ -265,8 +334,30 @@ function pillar(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.fillRect(x + 6, y + 3, 4, 44);
   ctx.fillStyle = C['7'];
   ctx.fillRect(x + 7, y + 3, 2, 44);
-  bevelBox(ctx, x, y + 46, 16, 10, DARK_METAL); // 柱腳
-  bevelBox(ctx, x, y - 2, 16, 6, DARK_METAL); // 柱頭
+
+  // 柱腳與柱頭：暗金屬 ramp
+  const dr = RAMP.dark_metal;
+  // 柱腳
+  ctx.fillStyle = dr[0];
+  ctx.fillRect(x, y + 46, 16, 10);
+  ctx.fillStyle = dr[2];
+  ctx.fillRect(x + 1, y + 47, 14, 8);
+  ctx.fillStyle = dr[3];
+  ctx.fillRect(x + 1, y + 47, 14, 1);
+  ctx.fillStyle = dr[1];
+  ctx.fillRect(x + 1, y + 54, 14, 1);
+  // 柱頭
+  ctx.fillStyle = dr[0];
+  ctx.fillRect(x, y - 2, 16, 6);
+  ctx.fillStyle = dr[2];
+  ctx.fillRect(x + 1, y - 1, 14, 4);
+  ctx.fillStyle = dr[3];
+  ctx.fillRect(x + 1, y - 1, 14, 1);
+  ctx.fillStyle = dr[1];
+  ctx.fillRect(x + 1, y + 2, 14, 1);
+
+  // 邊緣光：讓柱子從背景跳出來
+  rimLight(ctx, x + 1, y - 2, 14, 58, r[4], 0.4);
 }
 
 function bench(ctx: CanvasRenderingContext2D, x: number, y: number) {
@@ -318,25 +409,55 @@ function portal(ctx: CanvasRenderingContext2D, x: number, y: number, accent: Acc
 }
 
 function board(ctx: CanvasRenderingContext2D, x: number, y: number, t: number) {
-  drawShadow(ctx, x + 28, y + 47, 20, 5);
-  bevelBox(ctx, x + 18, y + 36, 20, 12, DARK_METAL); // 基座
+  // 接觸陰影
+  contactShadow(ctx, x + 28, y + 47, 20, 5);
+
+  // 基座：5 階暗金屬
+  const dr = RAMP.dark_metal;
+  ctx.fillStyle = dr[0];
+  ctx.fillRect(x + 18, y + 36, 20, 12);
+  ctx.fillStyle = dr[2];
+  ctx.fillRect(x + 19, y + 37, 18, 10);
+  ctx.fillStyle = dr[3];
+  ctx.fillRect(x + 19, y + 37, 18, 1);
+  ctx.fillStyle = dr[1];
+  ctx.fillRect(x + 19, y + 46, 18, 1);
+  // 基座上的品牌色嵌條
   ctx.fillStyle = C.n;
   ctx.fillRect(x + 22, y + 38, 12, 1);
+  // 邊緣光
+  rimLight(ctx, x + 18, y + 36, 20, 12, dr[4], 0.35);
+
   // 懸浮的全息面板，會非常緩慢地上下呼吸
   const lift = Math.round(Math.sin(t * 1.4) * 1);
   const py = y + lift;
   glow(ctx, x + 2, py, 52, 34, C.n, 0.7);
+  // 面板外框（多層邊框增加精緻感）
   ctx.fillStyle = C['0'];
   ctx.fillRect(x + 2, py, 52, 34);
-  ctx.strokeStyle = C.n;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(x + 2.5, py + 0.5, 51, 33);
+  ctx.fillStyle = C['1'];
+  ctx.fillRect(x + 3, py + 1, 50, 32);
+  ctx.fillStyle = C['0'];
+  ctx.fillRect(x + 4, py + 2, 48, 30);
+  // 邊框的亮色描邊（品牌色）
   ctx.fillStyle = C.n;
-  ctx.fillRect(x + 5, py + 4, 20, 2); // 標題列
+  ctx.fillRect(x + 3, py + 1, 50, 1); // 頂邊
+  ctx.fillRect(x + 3, py + 1, 1, 32); // 左邊
+  ctx.globalAlpha = 0.5;
+  ctx.fillRect(x + 3, py + 32, 50, 1); // 底邊（暗一階）
+  ctx.fillRect(x + 52, py + 1, 1, 32); // 右邊（暗一階）
+  ctx.globalAlpha = 1;
+
+  // 螢幕內容
+  ctx.fillStyle = C.n;
+  ctx.fillRect(x + 6, py + 5, 20, 2); // 標題列
   ctx.fillStyle = C.r;
-  ctx.fillRect(x + 46, py + 4, 4, 2); // 熱度標記
+  ctx.fillRect(x + 46, py + 5, 4, 2); // 熱度標記
   textBars(ctx, x + 6, py + 11, 44, 7, C.o, 7);
-  scanlines(ctx, x + 3, py + 1, 50, 32, t * 9);
+  // 顆粒增加螢幕質感
+  grain(ctx, x + 5, py + 3, 46, 28, C.n, 2, 0.15);
+  scanlines(ctx, x + 4, py + 2, 48, 30, t * 9);
+
   // 從基座打上來的光束
   ctx.save();
   ctx.globalAlpha = 0.18;
@@ -918,6 +1039,609 @@ function noteboard(ctx: CanvasRenderingContext2D, x: number, y: number, t: numbe
   ctx.fillStyle = C['2'];
   ctx.fillRect(x + 73 + sway, y + 34, 9, 1);
   ctx.fillRect(x + 73 + sway, y + 37, 6, 1);
+}
+
+// ── 大廳中軸：現貨交易台 ─────────────────────────────────────
+
+/**
+ * MAX 現貨交易台：後方行情看板 + 前方櫃檯。
+ *
+ * 比 `tradetable`（盯盤圓桌）大兩倍，是中軸上的重要地標。
+ * 後方立著一面大型行情看板（多行跑數字），前方是品牌藍的受理櫃檯。
+ * 光池用 MAX 品牌藍，跟右邊 MAX 翼的終端機呼應。
+ *
+ * 碰撞盒在 y+34..y+48（prop 本體中段），確保 prop 底部（y+56）
+ * 前方的互動區 frontOf (y+30..y+90) 不被自身 solid 擋住。
+ */
+function tradedesk(ctx: CanvasRenderingContext2D, x: number, y: number, t: number) {
+  drawShadow(ctx, x + 48, y + 54, 40, 6);
+
+  // ── 後方行情看板 ──
+  bevelBox(ctx, x + 12, y, 72, 30, DARK_METAL);
+  // 螢幕
+  ctx.fillStyle = C['0'];
+  ctx.fillRect(x + 15, y + 3, 66, 24);
+  glow(ctx, x + 15, y + 3, 66, 24, C.A, 0.6);
+  // 滾動的行情數字（用 hash 產生穩定的假數據行）
+  const seed = hash(x, y);
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 5; col++) {
+      const h = hash(row * 7 + col * 13 + 3, seed & 0xffff);
+      const cx = x + 18 + col * 13;
+      const cy = y + 5 + row * 6;
+      ctx.fillStyle = (h >>> 2) & 1 ? C.s : C.r;
+      ctx.fillRect(cx, cy, 10, 4);
+    }
+  }
+  // 跑馬燈掃描線效果
+  scanlines(ctx, x + 15, y + 3, 66, 24, 0.15);
+
+  // ── MAX 品牌招牌 ──
+  const sw = glyphWidth('MAX', 1, 1) + 8;
+  const sx = x + 48 - sw / 2;
+  glow(ctx, sx, y + 26, sw, 11, C.A, 0.7);
+  bevelBox(ctx, sx, y + 26, sw, 11, { fill: C.l, light: C.m, dark: C.k, line: C['0'] });
+  glyphText(ctx, 'MAX', sx + 4, y + 28, C.A, 1, 1);
+
+  // ── 前方櫃檯 ──
+  // 櫃檯台座用亮一階的金屬，呼應 trustdesk 的做法
+  bevelBox(ctx, x, y + 36, 96, 14, { fill: C['4'], light: C['6'], dark: C['2'], line: C['0'] });
+  bevelBox(ctx, x - 2, y + 34, 100, 6, DARK_METAL);
+  // 品牌藍嵌條
+  ctx.fillStyle = C.A;
+  ctx.fillRect(x + 2, y + 42, 92, 1);
+  // 檯面上左右兩個受理燈
+  ctx.save();
+  ctx.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(t * 0.8));
+  ctx.fillStyle = C.s;
+  ctx.fillRect(x + 10, y + 44, 3, 3);
+  ctx.fillRect(x + 83, y + 44, 3, 3);
+  ctx.restore();
+  // 假的文字行（等待下單資訊）
+  textBars(ctx, x + 20, y + 44, 56, 2, C['6'], 7);
+}
+
+// ── 大廳四個功能站點的專屬造型 ──────────────────────────────
+//
+// 一個功能一個剪影。這四件的共同要求是「站在走道上遠遠一眼就分得出
+// 哪個是哪個」—— 站牌上的中文得走近才讀得到，辨識全靠外形與光色：
+//
+//   MAIA　　紫、圓、懸浮　　　→ 唯一的紫光，唯一沒有直角的東西
+//   公告　　藍、窄、直立　　　→ 高塔，裡面看得到白色紙本
+//   活動　　琥珀、寬、抬高　　→ 唯一有旗子跟紙花的東西
+//   客服　　藍、方、有隔間　　→ 唯一畫得出「房間」的東西
+
+/**
+ * MAIA 智慧核心。
+ *
+ * 這是全場唯一一件不屬於 MAX 的互動道具，所以它刻意不共用 MAX 的任何語彙：
+ * 不用品牌藍、不用直角機殼、不用資料流螢幕。它是一顆懸浮的紫色核心 +
+ * 一張弧形控制台，最接近的參照是既有的 `hologram`，但體積大一倍、
+ * 而且檯面上刻著 MAIA 四個字 —— 這一區是誰的地盤要靠銘牌講清楚。
+ *
+ * 控制台正面那排跳動的長條是「它在聽」。靜止的機器跟待機的機器長得一樣，
+ * 一排會動的音量條是最省的「這東西是活的」。
+ */
+function maiapod(ctx: CanvasRenderingContext2D, x: number, y: number, t: number) {
+  contactShadow(ctx, x + 32, y + 76, 24, 6);
+
+  // ── 弧形控制台 ──
+  // 台座用暗金屬，檯面用亮一階的金屬（跟 trustdesk / tradedesk 同一套做法），
+  // 紫色只出現在嵌條與螢幕上 —— 整件塗紫會變成一塊糖果。
+  bevelBox(ctx, x + 6, y + 62, 52, 14, DARK_METAL);
+  bevelBox(ctx, x + 2, y + 54, 60, 10, { fill: C['4'], light: C['6'], dark: C['2'], line: C['0'] });
+  // 檯面兩端往前收，做出弧形的錯覺（真的畫弧在這個尺寸會糊成一團）
+  bevelBox(ctx, x, y + 56, 8, 6, DARK_METAL);
+  bevelBox(ctx, x + 56, y + 56, 8, 6, DARK_METAL);
+  ctx.fillStyle = C.t;
+  ctx.fillRect(x + 4, y + 60, 56, 1); // 紫色嵌條
+
+  // ── 銘牌：MAIA ──
+  const nw = glyphWidth('MAIA', 1, 1) + 6;
+  const nx = x + 32 - nw / 2;
+  glow(ctx, nx, y + 66, nw, 9, C.t, 0.6);
+  bevelBox(ctx, nx, y + 66, nw, 9, { fill: C.u, light: C.t, dark: C['0'], line: C['0'] });
+  glyphText(ctx, 'MAIA', nx + 3, y + 67, C['8'], 1, 1);
+
+  // ── 檯面上的音量條：8 根，各自的相位錯開 ──
+  const seed = hash(x, y);
+  ctx.fillStyle = C.t;
+  for (let i = 0; i < 8; i++) {
+    const ph = t * 3.2 + i * 0.8 + ((seed >>> i) % 7) * 0.4;
+    const h = 1 + Math.round(Math.abs(Math.sin(ph)) * 4);
+    ctx.fillRect(x + 12 + i * 5, y + 58 - h, 3, h);
+  }
+
+  // ── 投影光柱：從檯面打到核心 ──
+  const cx = x + 32;
+  const cy = y + 24 + Math.round(Math.sin(t * 1.1) * 2);
+  ctx.save();
+  ctx.globalAlpha = 0.13;
+  ctx.fillStyle = C.t;
+  ctx.beginPath();
+  ctx.moveTo(x + 22, y + 54);
+  ctx.lineTo(x + 42, y + 54);
+  ctx.lineTo(cx + 18, cy + 10);
+  ctx.lineTo(cx - 18, cy + 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // ── 懸浮核心 ──
+  // 三層同心圓 + 最亮的中心點。圓形物件要用 radialGlow，方形的 glow()
+  // 會在圓外圍露出一圈方邊（金幣雕像第一版就是這樣）。
+  radialGlow(ctx, cx, cy, 13, C.t, 1);
+  disc(ctx, cx, cy, 13, C['0']);
+  disc(ctx, cx, cy, 12, C.u);
+  disc(ctx, cx, cy, 8, C.t);
+  disc(ctx, cx, cy, 3, C['8']);
+
+  // 三圈以不同速度傾斜旋轉的資料環。用縮放後的橢圓模擬 3D 環，
+  // ry 隨相位收放才會像在翻轉而不是在放大縮小。
+  ctx.save();
+  for (let i = 0; i < 3; i++) {
+    const ph = t * (0.7 + i * 0.4) + i * 2.1;
+    const ry = 2 + Math.abs(Math.sin(ph)) * 7;
+    ctx.globalAlpha = 0.4 + 0.3 * Math.abs(Math.cos(ph));
+    ctx.strokeStyle = i === 1 ? C.t : C.u;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 18 - i * 3, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 往上飄的資料微粒。x 由雜湊固定、只有 y 隨時間走 ——
+  // 兩軸都亂跳的話那不是資料流，是雪。
+  for (let i = 0; i < 7; i++) {
+    const px = x + 10 + ((seed >>> (i * 3)) % 44);
+    const k = (t * 0.5 + i * 0.15) % 1;
+    ctx.save();
+    ctx.globalAlpha = 0.7 * (1 - k);
+    ctx.fillStyle = i % 3 === 0 ? C['8'] : C.t;
+    ctx.fillRect(px, Math.round(y + 52 - k * 46), 1, 2);
+    ctx.restore();
+  }
+}
+
+/**
+ * 公告塔。
+ *
+ * 公告的本質是「官方貼出來的紙」，所以這件道具的主角是**白色的紙本**，
+ * 不是螢幕。原本它用 `terminal`（一台跑資料流的機器），跟旁邊的活動、
+ * 交易台一樣都是綠光藍光的螢幕，三件事看起來完全一樣。
+ *
+ * 白紙是這面牆上唯一的高明度大色塊，遠遠一眼就跟所有螢幕分開；最上面
+ * 那條滾動的標題燈條負責「這裡的內容會更新」；底下的鋼印負責「這是官方的」。
+ */
+function newsboard(ctx: CanvasRenderingContext2D, x: number, y: number, t: number) {
+  contactShadow(ctx, x + 38, y + 76, 26, 6);
+
+  // ── 底座 ──
+  bevelBox(ctx, x + 10, y + 62, 56, 16, DARK_METAL);
+  ctx.fillStyle = C.A;
+  ctx.fillRect(x + 16, y + 66, 44, 1);
+
+  // ── 塔身 ──
+  bevelBox(ctx, x, y, 76, 64, METAL);
+  rimLight(ctx, x, y, 76, 64, C['6'], 0.4);
+
+  // ── 頂端：滾動標題燈條 ──
+  // 跟 ticker 同一個做法（取模的相位重複畫，不是真的做一條無限長的字串），
+  // 但只有一行、而且是品牌藍 —— 它是公告的「最新一則」而不是行情。
+  bevelBox(ctx, x + 3, y + 3, 70, 12, DARK_METAL);
+  ctx.fillStyle = C['0'];
+  ctx.fillRect(x + 4, y + 5, 68, 8);
+  glow(ctx, x + 4, y + 5, 68, 8, C.A, 0.6);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x + 4, y + 5, 68, 8);
+  ctx.clip();
+  const period = 40;
+  const scroll = (t * 16) % period;
+  for (let i = 0; i < 4; i++) {
+    const gx = Math.round(x + 4 + i * period - scroll);
+    ctx.fillStyle = C.A;
+    ctx.fillRect(gx, y + 7, 3, 3); // 前導方塊
+    ctx.fillStyle = C['7'];
+    ctx.fillRect(gx + 6, y + 8, 26, 2); // 標題
+  }
+  ctx.restore();
+
+  // ── 中段：玻璃公告櫃 ──
+  ctx.fillStyle = C['0'];
+  ctx.fillRect(x + 4, y + 18, 68, 40);
+  // 三張紙本公告。最上面那張是新的，掛一枚紅色標籤。
+  for (let i = 0; i < 3; i++) {
+    const py = y + 20 + i * 13;
+    ctx.fillStyle = C['5'];
+    ctx.fillRect(x + 7, py, 62, 11); // 紙的陰影邊
+    ctx.fillStyle = C['7'];
+    ctx.fillRect(x + 7, py, 61, 10); // 紙
+    ctx.fillStyle = C['8'];
+    ctx.fillRect(x + 7, py, 61, 1);
+    // 紙上的假字。深藍而不是黑 —— 10px 高的紙用純黑會整張變灰。
+    ctx.fillStyle = C.l;
+    ctx.fillRect(x + 10, py + 2, 20 + (i * 7) % 13, 1);
+    textBars(ctx, x + 10, py + 5, 52, 2, C['5'], 3 + i * 4);
+    if (i === 0) {
+      ctx.fillStyle = C.r;
+      ctx.fillRect(x + 60, py + 1, 7, 4); // NEW 標籤
+    }
+  }
+  // 玻璃：一道斜向反光 + 外框。少了反光它就只是一個開放的紙盒。
+  ctx.save();
+  ctx.globalAlpha = 0.14;
+  ctx.fillStyle = C['8'];
+  ctx.beginPath();
+  ctx.moveTo(x + 4, y + 48);
+  ctx.lineTo(x + 30, y + 18);
+  ctx.lineTo(x + 44, y + 18);
+  ctx.lineTo(x + 4, y + 58);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = C['6'];
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 4.5, y + 18.5, 67, 39);
+
+  // ── 官方鋼印：一枚放射刻痕的圓章 ──
+  // 這是「官方」二字唯一畫得出來的部分。
+  const sx = x + 14;
+  const sy = y + 60;
+  radialGlow(ctx, sx, sy, 6, C.A, 0.8);
+  disc(ctx, sx, sy, 6, C['0']);
+  disc(ctx, sx, sy, 5, C.A);
+  disc(ctx, sx, sy, 3, C.l);
+  ctx.fillStyle = C['8'];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ctx.fillRect(Math.round(sx + Math.cos(a) * 4), Math.round(sy + Math.sin(a) * 4), 1, 1);
+  }
+
+  // 右下角一顆很慢的呼吸燈：塔還在線上
+  ctx.save();
+  ctx.globalAlpha = 0.4 + 0.6 * Math.abs(Math.sin(t * 0.9));
+  ctx.fillStyle = C.s;
+  ctx.fillRect(x + 66, y + 60, 3, 3);
+  ctx.restore();
+}
+
+/**
+ * 活動舞台。
+ *
+ * 活動跟公告的差別是**溫度**：公告是官方冷靜地貼一張紙，活動是「限時、
+ * 有獎、快來」。所以這件道具是全場唯一有旗子、有紙花、有轉盤的東西，
+ * 光色也刻意脫離品牌藍改用琥珀 —— 它必須看起來像在辦活動，不是在公佈事項。
+ *
+ * 抬高的舞台是它的剪影關鍵：旁邊三件都是「立在地上的板子或檯面」，
+ * 只有它有一塊踏上去的平台，遠看的輪廓完全不同。
+ */
+function eventstage(ctx: CanvasRenderingContext2D, x: number, y: number, t: number) {
+  contactShadow(ctx, x + 48, y + 80, 40, 6);
+
+  // ── 兩根旗杆 + 三角旗串 ──
+  const dr = RAMP.dark_metal;
+  ctx.fillStyle = dr[2];
+  ctx.fillRect(x + 4, y + 4, 2, 62);
+  ctx.fillRect(x + 90, y + 4, 2, 62);
+  ctx.fillStyle = dr[4];
+  ctx.fillRect(x + 4, y + 4, 1, 62);
+  ctx.fillRect(x + 90, y + 4, 1, 62);
+  // 旗繩：中間下垂，用二次曲線的離散取樣畫成 1px 的點
+  const FLAG = [C.p, C.r, C.n, C.s, C.p, C.t, C.q];
+  const ropeY = (u: number) => y + 6 + Math.sin(u * Math.PI) * 7;
+  ctx.fillStyle = C['6'];
+  for (let px = 5; px <= 91; px++) {
+    ctx.fillRect(x + px, Math.round(ropeY((px - 5) / 86)), 1, 1);
+  }
+  // 旗子在風裡輕輕擺：整串共用一個相位，每面各加一點偏移
+  for (let i = 0; i < 7; i++) {
+    const u = (i + 0.5) / 7;
+    const fx = Math.round(x + 5 + u * 86);
+    const fy = Math.round(ropeY(u)) + 1;
+    const sway = Math.round(Math.sin(t * 1.6 + i * 0.7) * 1);
+    ctx.fillStyle = FLAG[i]!;
+    for (let k = 0; k < 7; k++) {
+      const half = Math.max(0, 4 - Math.floor(k * 0.7));
+      ctx.fillRect(fx - half + sway, fy + k, half * 2 + 1, 1);
+    }
+  }
+
+  // ── 倒數看板 ──
+  // 真的在跳的數字。活動最重要的資訊是「還剩多久」，一塊寫死的招牌
+  // 只是裝飾，一塊在倒數的招牌是理由。
+  bevelBox(ctx, x + 26, y + 20, 44, 18, DARK_METAL);
+  ctx.fillStyle = C['0'];
+  ctx.fillRect(x + 28, y + 22, 40, 14);
+  glow(ctx, x + 28, y + 22, 40, 14, C.p, 0.7);
+  const secs = 59 - (Math.floor(t) % 60);
+  const label = `${String(secs).padStart(2, '0')}`;
+  glyphText(ctx, label, x + 32, y + 26, C.p, 1, 1);
+  ctx.fillStyle = C.q;
+  ctx.fillRect(x + 46, y + 27, 1, 1);
+  ctx.fillRect(x + 46, y + 31, 1, 1);
+  glyphText(ctx, '00', x + 50, y + 26, C.p, 1, 1);
+  scanlines(ctx, x + 28, y + 22, 40, 14, t * 9);
+
+  // ── 舞台：上表面 + 前立面 ──
+  // 上表面亮一階、前立面暗兩階，這個明度差就是「這塊是抬高的」。
+  bevelBox(ctx, x + 8, y + 62, 80, 16, DARK_METAL); // 前立面
+  bevelBox(ctx, x + 6, y + 52, 84, 12, { fill: C['5'], light: C['7'], dark: C['3'], line: C['0'] });
+  ctx.fillStyle = C.p;
+  ctx.fillRect(x + 10, y + 66, 72, 1); // 琥珀嵌條
+
+  // 前立面的跑燈：一顆亮點沿著燈泡串跑
+  const bulbs = 9;
+  const lead = Math.floor(t * 6) % bulbs;
+  for (let i = 0; i < bulbs; i++) {
+    const on = i === lead || i === (lead + 4) % bulbs;
+    ctx.fillStyle = on ? C.p : C.q;
+    ctx.fillRect(x + 13 + i * 8, y + 71, 3, 3);
+  }
+
+  // ── 舞台上：獎品箱 ──
+  bevelBox(ctx, x + 14, y + 38, 22, 16, { fill: C.q, light: C.p, dark: C.a, line: C['0'] });
+  ctx.fillStyle = C.r;
+  ctx.fillRect(x + 23, y + 38, 4, 16); // 緞帶（縱）
+  ctx.fillRect(x + 14, y + 44, 22, 3); // 緞帶（橫）
+  ctx.fillStyle = C['8'];
+  ctx.fillRect(x + 21, y + 35, 3, 3); // 蝴蝶結
+  ctx.fillRect(x + 26, y + 35, 3, 3);
+
+  // ── 舞台上：抽獎轉盤 ──
+  // 六個扇形交替上色，慢慢轉。指針固定在正上方，所以「轉的是盤不是針」。
+  const wx = x + 62;
+  const wy = y + 44;
+  radialGlow(ctx, wx, wy, 12, C.p, 0.7);
+  disc(ctx, wx, wy, 12, C['0']);
+  const spin = t * 0.6;
+  ctx.save();
+  for (let i = 0; i < 6; i++) {
+    ctx.fillStyle = i % 2 === 0 ? C.p : C.r;
+    ctx.beginPath();
+    ctx.moveTo(wx, wy);
+    ctx.arc(wx, wy, 11, spin + (i / 6) * Math.PI * 2, spin + ((i + 1) / 6) * Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  disc(ctx, wx, wy, 3, C['0']);
+  disc(ctx, wx, wy, 2, C['8']);
+  ctx.fillStyle = C['8'];
+  ctx.fillRect(wx - 1, wy - 15, 2, 4); // 指針
+
+  // ── 紙花 ──
+  // x 由雜湊固定、只有 y 隨時間落下，落到舞台面就重來。
+  // 兩軸都亂跳看起來是雜訊，不是紙花。
+  const seed = hash(x, y);
+  for (let i = 0; i < 10; i++) {
+    const px = x + 8 + ((seed >>> (i * 2)) % 82);
+    const k = (t * 0.35 + i * 0.11) % 1;
+    ctx.save();
+    ctx.globalAlpha = 0.85 * (1 - k * 0.5);
+    ctx.fillStyle = FLAG[(i + (seed % 3)) % FLAG.length]!;
+    // 落下時左右飄，飄幅隨落下距離變大
+    const drift = Math.round(Math.sin(t * 2 + i) * (1 + k * 2));
+    ctx.fillRect(px + drift, Math.round(y + 8 + k * 44), 2, 2);
+    ctx.restore();
+  }
+}
+
+/**
+ * MAX 官方客服辦公區。
+ *
+ * 原本客服是一條 `counter` —— 跟 MAIA 用的是同一件道具，只是短了 8px。
+ * 那讀不出「這裡有人上班」：客服的重點不是一張檯子，是**一個辦公室**：
+ * 隔屏後面有人、有桌子、有螢幕、有正在跳號的叫號機、門口有排隊動線。
+ *
+ * 由下往上四層，這是俯視角唯一能表達「有進深」的辦法：
+ *   ① 前緣　服務櫃檯 + 玻璃隔板 + 服務鈴 + 表單架
+ *   ② 中段　叫號螢幕 + 值班的客服機器人（只露出上半身，剩下被檯面擋住）
+ *   ③ 後段　兩張辦公桌（桌面 + 螢幕 + 椅背）+ 檔案櫃 + 盆栽
+ *   ④ 最後　玻璃隔屏牆 + MAX 招牌橫樑
+ *
+ * 西側刻意留一道敞開的側門（見 propSolid 的註解）—— 那個缺口同時是
+ * 碰撞盒的缺口，畫面與走位講的是同一件事。
+ */
+function supportdesk(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, t: number) {
+  contactShadow(ctx, x + w / 2, y + 84, w / 2 - 4, 7);
+  const STEEL = { fill: C['4'], light: C['6'], dark: C['2'], line: C['0'] };
+  const BRAND = { fill: C.l, light: C.m, dark: C.k, line: C['0'] };
+  const seed = hash(x, y);
+
+  // ── ④ 招牌橫樑 + 玻璃隔屏牆 ──
+  bevelBox(ctx, x + 20, y, w - 20, 10, BRAND);
+  glow(ctx, x + 20, y, w - 20, 10, C.A, 0.5);
+  const gw = glyphWidth('MAX', 1, 1);
+  glyphText(ctx, 'MAX', x + 28, y + 2, C['8'], 1, 1);
+  ctx.fillStyle = C.A;
+  ctx.fillRect(x + 32 + gw, y + 4, w - 44 - gw, 2); // 招牌上的裝飾線
+
+  // 隔屏：暗框 + 分格玻璃。玻璃用品牌藍的暗階填底，不是純黑 ——
+  // 純黑會讓後場整片陷進背景，那就等於沒有後場。
+  bevelBox(ctx, x + 20, y + 10, w - 20, 26, DARK_METAL);
+  const panes = Math.floor((w - 28) / 26);
+  for (let i = 0; i < panes; i++) {
+    const px = x + 24 + i * 26;
+    ctx.fillStyle = C.k;
+    ctx.fillRect(px, y + 13, 22, 20);
+    // 每格一道斜向反光，位置錯開才不像貼圖複製
+    ctx.save();
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = C['8'];
+    ctx.beginPath();
+    ctx.moveTo(px + 2 + (i % 3) * 4, y + 33);
+    ctx.lineTo(px + 12 + (i % 3) * 4, y + 13);
+    ctx.lineTo(px + 17 + (i % 3) * 4, y + 13);
+    ctx.lineTo(px + 7 + (i % 3) * 4, y + 33);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 西側敞開的側門：隔屏在這裡斷開，只留一根門柱與地上的踏墊
+  bevelBox(ctx, x + 14, y + 6, 8, 40, DARK_METAL);
+  ctx.fillStyle = C.A;
+  ctx.fillRect(x + 16, y + 10, 4, 1);
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = C.m;
+  ctx.fillRect(x, y + 56, 22, 12); // 門口的地墊
+  ctx.restore();
+
+  // ── ③ 後場：兩張辦公桌 ──
+  for (let i = 0; i < 2; i++) {
+    const dx = x + 30 + i * 48;
+    bevelBox(ctx, dx, y + 36, 40, 12, STEEL); // 桌面
+    ctx.fillStyle = C['2'];
+    ctx.fillRect(dx + 2, y + 45, 36, 2); // 桌緣暗面
+    // 螢幕：背對玩家，所以看到的是機殼背面 + 一圈漏出來的光
+    glow(ctx, dx + 8, y + 28, 20, 12, C.A, 0.35);
+    bevelBox(ctx, dx + 8, y + 28, 20, 12, DARK_METAL);
+    ctx.fillStyle = C.m;
+    ctx.fillRect(dx + 10, y + 30, 16, 8);
+    ctx.fillStyle = C.A;
+    ctx.fillRect(dx + 12, y + 32, 8 + ((seed >>> (i * 4)) % 6), 1);
+    // 桌上的紙本與馬克杯
+    ctx.fillStyle = C['7'];
+    ctx.fillRect(dx + 30, y + 39, 8, 6);
+    ctx.fillStyle = C.p;
+    ctx.fillRect(dx + 2, y + 40, 4, 4);
+    // 椅背（只看得到上緣，人坐在桌後）
+    ctx.fillStyle = C['1'];
+    ctx.fillRect(dx + 12, y + 48, 14, 5);
+    ctx.fillStyle = C['3'];
+    ctx.fillRect(dx + 13, y + 48, 12, 3);
+  }
+  // 檔案櫃：三層抽屜，右側
+  bevelBox(ctx, x + w - 24, y + 32, 20, 24, DARK_METAL);
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = C['4'];
+    ctx.fillRect(x + w - 21, y + 35 + i * 7, 14, 5);
+    ctx.fillStyle = C['6'];
+    ctx.fillRect(x + w - 16, y + 37 + i * 7, 4, 1); // 把手
+  }
+  // 盆栽：整間辦公室唯一的綠色，也是唯一的曲線
+  ctx.fillStyle = C.f;
+  ctx.fillRect(x + w - 44, y + 46, 8, 7);
+  ctx.fillStyle = C.s;
+  for (const [ox, oy, h] of [
+    [4, 36, 10],
+    [2, 39, 7],
+    [6, 39, 7],
+  ] as const) {
+    ctx.fillRect(x + w - 44 + ox, y + oy, 1, h);
+  }
+
+  // ── ② 叫號螢幕 + 值班機器人 ──
+  // 螢幕吊在隔屏前，號碼每 4 秒跳一次。跳號是「有人正在被服務」最短的表達。
+  const nx = x + w / 2 - 17;
+  glow(ctx, nx, y + 40, 34, 14, C.p, 0.6);
+  bevelBox(ctx, nx, y + 40, 34, 14, DARK_METAL);
+  ctx.fillStyle = C['0'];
+  ctx.fillRect(nx + 2, y + 42, 30, 10);
+  const ticket = 12 + (Math.floor(t / 4) % 8);
+  glyphText(ctx, String(ticket), nx + 4, y + 43, C.p, 1, 1);
+  // 往右的箭頭：「請 12 號到櫃檯」
+  ctx.fillStyle = C.s;
+  for (let k = 0; k < 4; k++) {
+    ctx.fillRect(nx + 22 + k, y + 44 + (3 - k) / 2, 1, 3 + k);
+  }
+
+  // 客服機器人：站在櫃檯後，只露出頭與肩，其餘被檯面擋住。
+  // 直接畫在這裡而不是擺一顆獨立的 robot prop —— 它必須被自己的檯面
+  // 遮住才像「櫃檯後面的人」，兩件獨立道具的 y 排序做不到這件事。
+  const bob = Math.round(Math.sin(t * 1.7) * 1);
+  const rx = x + w / 2 - 10;
+  const ry = y + 54 + bob;
+  glow(ctx, rx + 2, ry + 2, 16, 14, C.p, 0.35);
+  bevelBox(ctx, rx, ry, 20, 16, METAL); // 頭
+  ctx.fillStyle = C['0'];
+  ctx.fillRect(rx + 3, ry + 4, 14, 9); // 面板
+  const blink = t % 3.4 < 0.12;
+  ctx.fillStyle = C.p;
+  if (blink) {
+    ctx.fillRect(rx + 5, ry + 9, 4, 1);
+    ctx.fillRect(rx + 12, ry + 9, 4, 1);
+  } else {
+    ctx.fillRect(rx + 5, ry + 7, 4, 3);
+    ctx.fillRect(rx + 12, ry + 7, 4, 3);
+  }
+  // 耳機麥克風：一條從耳側繞到嘴前的細桿。這是「客服」最短的視覺代號。
+  ctx.fillStyle = C['6'];
+  ctx.fillRect(rx - 2, ry + 5, 2, 5);
+  ctx.fillRect(rx + 20, ry + 5, 2, 5);
+  ctx.fillRect(rx + 21, ry + 4, 1, 1);
+  ctx.fillStyle = C.q;
+  ctx.fillRect(rx + 17, ry + 12, 4, 1);
+  ctx.fillStyle = C.A;
+  ctx.fillRect(rx + 6, ry - 2, 8, 2); // 頭頂的天線座
+
+  // ── ① 服務櫃檯 ──
+  // 檯面壓在機器人之後畫，所以機器人自然被切在檯面後方。
+  bevelBox(ctx, x + 24, y + 68, w - 40, 16, STEEL);
+  bevelBox(ctx, x + 22, y + 66, w - 36, 6, DARK_METAL); // 檯緣往外突出
+  ctx.fillStyle = C.A;
+  ctx.fillRect(x + 28, y + 74, w - 48, 1); // 品牌藍嵌條
+
+  // 玻璃隔板：兩根立柱夾一片半透明玻璃，中央開一個對話孔
+  ctx.save();
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = C['8'];
+  ctx.fillRect(x + 34, y + 58, w - 60, 10);
+  ctx.restore();
+  ctx.fillStyle = C['6'];
+  ctx.fillRect(x + 34, y + 58, 1, 10);
+  ctx.fillRect(x + w - 27, y + 58, 1, 10);
+  ctx.fillRect(x + 34, y + 58, w - 60, 1);
+  ctx.fillStyle = C['1'];
+  for (let i = 0; i < 3; i++) ctx.fillRect(x + w / 2 - 3 + i * 3, y + 64, 2, 2); // 對話孔
+
+  // 檯面上：服務鈴、表單架、讀卡機
+  disc(ctx, x + 34, y + 72, 4, C['0']);
+  disc(ctx, x + 34, y + 72, 3, C.q);
+  disc(ctx, x + 34, y + 71, 2, C.p); // 鈴
+  ctx.fillStyle = C['7']; // 表單架
+  ctx.fillRect(x + w - 46, y + 70, 12, 8);
+  ctx.fillStyle = C['5'];
+  ctx.fillRect(x + w - 46, y + 70, 12, 1);
+  textBars(ctx, x + w - 44, y + 72, 8, 2, C['5'], 5);
+  bevelBox(ctx, x + w - 30, y + 70, 10, 8, DARK_METAL); // 讀卡機
+  ctx.save();
+  ctx.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(t * 1.1));
+  ctx.fillStyle = C.s;
+  ctx.fillRect(x + w - 27, y + 73, 4, 2);
+  ctx.restore();
+}
+
+/**
+ * 排隊動線欄杆。
+ *
+ * 客服辦公區前面那塊空地本來只是空地。放兩根伸縮帶欄杆，它立刻變成
+ * 「候位區」—— 用兩件 32px 的小道具說明一整塊地面的用途，比在那裡
+ * 多擺兩張椅子便宜也清楚。
+ */
+function queuerail(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  contactShadow(ctx, x + 8, y + 28, 7, 3);
+  // 圓盤底座
+  disc(ctx, x + 8, y + 25, 7, C['0']);
+  disc(ctx, x + 8, y + 24, 6, C['3']);
+  disc(ctx, x + 8, y + 23, 4, C['5']);
+  // 立柱：3px 寬，左側 1px 高光
+  ctx.fillStyle = C['1'];
+  ctx.fillRect(x + 6, y + 4, 4, 21);
+  ctx.fillStyle = C['5'];
+  ctx.fillRect(x + 6, y + 4, 1, 21);
+  ctx.fillStyle = C['6'];
+  ctx.fillRect(x + 6, y + 2, 4, 3); // 柱頭
+  // 伸縮帶：往右拉出去，品牌藍
+  ctx.fillStyle = C['0'];
+  ctx.fillRect(x + 10, y + 7, 22, 4);
+  ctx.fillStyle = C.l;
+  ctx.fillRect(x + 10, y + 8, 22, 2);
+  ctx.fillStyle = C.A;
+  ctx.fillRect(x + 10, y + 8, 22, 1);
 }
 
 // ── MAX 情報室的品牌道具 ────────────────────────────────────
