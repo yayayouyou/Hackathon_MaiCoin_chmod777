@@ -512,6 +512,9 @@
     box-shadow: inset 0 0 0 1px var(--amber);
   }
 
+  .maia-approval-btns { display: flex; gap: 6px; margin-top: 8px; }
+  .maia-approval-btns .btn { flex: 1; font-size: 12px; }
+
   /* reader 注入攔截警示：rose 色調，跟核准卡（琥珀）區隔開來 */
   .maia-reader {
     padding: 10px;

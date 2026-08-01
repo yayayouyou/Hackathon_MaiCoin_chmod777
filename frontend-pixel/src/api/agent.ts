@@ -236,3 +236,44 @@ export async function loadSession(id: string, signal?: AbortSignal): Promise<Ses
     return null;
   }
 }
+
+// ── 下單核准（human-in-the-loop）────────────────────────────
+// 核准/拒絕端點要帶 X-Approval-Secret 標頭（值 = /api/config 的 approval_secret，
+// 每次後端啟動換一把、只透過同源交給前端，擋跨源 CSRF）。見 agent_ui/app.py:60,695。
+
+/** 取回本次後端的核准密鑰（同源；失敗回空字串）。 */
+async function getApprovalSecret(): Promise<string> {
+  try {
+    const res = await fetch('/api/config');
+    if (!res.ok) return '';
+    return ((await res.json()) as { approval_secret?: string }).approval_secret ?? '';
+  } catch {
+    return '';
+  }
+}
+
+async function postApproval(path: string, token: string): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const secret = await getApprovalSecret();
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Approval-Secret': secret },
+      body: JSON.stringify({ token }),
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok || typeof data.error === 'string') {
+      return { ok: false, detail: typeof data.error === 'string' ? data.error : `HTTP ${res.status}` };
+    }
+    return { ok: true, detail: typeof data.message === 'string' ? data.message : '已送出' };
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : '連線失敗' };
+  }
+}
+
+/** 核准並執行一筆待核准訂單。 */
+export const approveOrder = (token: string): Promise<{ ok: boolean; detail: string }> =>
+  postApproval('/api/approve_order', token);
+
+/** 取消一筆待核准訂單。 */
+export const rejectOrder = (token: string): Promise<{ ok: boolean; detail: string }> =>
+  postApproval('/api/reject_order', token);

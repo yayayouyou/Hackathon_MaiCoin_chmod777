@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { setViewInset } from '../../engine/viewport';
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import {
+  approveOrder,
   ask,
   loadSessionInto,
   newConversation,
+  rejectOrder,
   subscribeLive,
   toolLabel,
   toolSource,
@@ -12,7 +14,7 @@ import {
   type ChartItem,
 } from '../../ui/chatStore';
 import { renderMarkdown } from '../../ui/markdown';
-import { chartSpecFor, planAgentBody } from '../../ui/vizCards';
+import { chartSpecFor, Disclaimer, planAgentBody } from '../../ui/vizCards';
 import { listSessions, type SessionSummary } from '../../api/agent';
 import { closeChatDock, openChatDock, useDock } from '../dockStore';
 
@@ -336,19 +338,16 @@ export function AgentDock() {
             <div key={m.id} className="chat-msg me">
               {m.text}
             </div>
-          ) : m.charts && m.charts.length > 0 ? (
-            // 帶圖表的答案：文字與圖表卡依 [圖表] 錨點交錯（無錨點則圖排在文字後）
-            <div key={m.id} className="chat-agent">
-              {renderAgentBody(m.text, m.charts)}
-            </div>
           ) : (
-            // 一般答案：渲染 markdown。renderMarkdown 先 escape 再套白名單標籤，
-            // 輸出可安全餵給 dangerouslySetInnerHTML（見 ui/markdown.ts 的安全模型）。
-            <div
-              key={m.id}
-              className="chat-msg chat-md"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
-            />
+            // agent 答案：內容（帶圖表則交錯 [圖表] 錨點）+ 依本輪工具的分級免責條
+            <div key={m.id} className="chat-turn">
+              {m.charts && m.charts.length > 0 ? (
+                <div className="chat-agent">{renderAgentBody(m.text, m.charts)}</div>
+              ) : (
+                <div className="chat-msg chat-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
+              )}
+              {m.tools && <Disclaimer tools={m.tools} />}
+            </div>
           ),
         )}
 
@@ -403,8 +402,14 @@ export function AgentDock() {
           <div className="maia-approval" data-testid="approval-card">
             <strong>需要你確認才會執行</strong>
             <div style={{ marginTop: 6 }}>{approval.summary}</div>
-            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
-              計畫雜湊 {approval.hash.slice(0, 12)}… · 完整的核准流程在風控室
+            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>計畫雜湊 {approval.hash.slice(0, 12)}…</div>
+            <div className="maia-approval-btns">
+              <button className="btn btn-primary" onClick={() => void approveOrder()}>
+                核准並執行
+              </button>
+              <button className="btn" onClick={() => void rejectOrder()}>
+                取消
+              </button>
             </div>
           </div>
         )}

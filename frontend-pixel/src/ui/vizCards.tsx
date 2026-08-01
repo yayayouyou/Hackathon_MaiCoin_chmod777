@@ -717,3 +717,38 @@ export function planAgentBody(text: string, charts: ChartItem[]): BodyPart[] {
   });
   return parts;
 }
+
+// ── 分級免責（依本輪工具自動判級，固定元件、不由模型自己寫）─────────
+const ACCT_TOOLS = new Set<string>([
+  'get_max_accounts',
+  'get_max_my_trades',
+  'get_open_positions',
+  'get_realized_pnl',
+  'get_trading_dna_score',
+  'analyze_trading_behavior',
+  'get_equity_curve',
+  'compare_sell_vs_hold',
+  'get_max_ad_ratio',
+]);
+
+export function disclaimerTier(tools: string[]): 'exec' | 'acct' | 'info' {
+  if (tools.some((t) => t.includes('order'))) return 'exec'; // 下單類（place/create/cancel_order）
+  if (tools.some((t) => ACCT_TOOLS.has(t))) return 'acct'; // 動用你的帳戶/交易紀錄
+  return 'info';
+}
+
+const DISCLAIMER: Record<'exec' | 'acct' | 'info', string> = {
+  exec: '本回覆涉及下單操作。任何下單都需經你手動核准，系統不會自動送出。以上不構成投資建議，交易有風險。',
+  acct: '本回覆使用了你的帳戶／交易紀錄，僅供參考，不構成投資建議，也不構成投資屬性評估。',
+  info: '以上為一般市場資訊與分析，不構成投資建議，也不構成投資屬性評估。交易有風險，請自行判斷。',
+};
+
+/** 答案下方的固定分級免責條（確保每則答案都有、且強度依本輪工具一致）。 */
+export function Disclaimer({ tools }: { tools: string[] }): ReactNode {
+  const tier = disclaimerTier(tools);
+  return (
+    <div className="viz-disclaimer" data-tier={tier}>
+      {DISCLAIMER[tier]}
+    </div>
+  );
+}

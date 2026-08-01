@@ -1,5 +1,13 @@
 import { useSyncExternalStore } from 'react';
-import { streamChat, loadSession, type AgentEvent, type ChatTurn, type ReplayStep } from '../api/agent';
+import {
+  streamChat,
+  loadSession,
+  approveOrder as approveOrderApi,
+  rejectOrder as rejectOrderApi,
+  type AgentEvent,
+  type ChatTurn,
+  type ReplayStep,
+} from '../api/agent';
 import { hud, type SourceTag, type ToolStep } from '../hud/channels';
 
 /**
@@ -15,8 +23,8 @@ import { hud, type SourceTag, type ToolStep } from '../hud/channels';
  * 通道，由 dock 直接寫 `ref.textContent`，收完（final_answer）才進歷史。
  */
 
-/** charts：這則答案本輪產生的圖表卡快照（嵌入答案 + 歷史重播用）。 */
-export type Msg = { id: number; who: 'agent' | 'me'; text: string; charts?: ChartItem[] };
+/** charts：本輪圖表卡快照（嵌入 + 重播）；tools：本輪用到的工具名（給分級免責）。 */
+export type Msg = { id: number; who: 'agent' | 'me'; text: string; charts?: ChartItem[]; tools?: string[] };
 export type Chip = { id: number; name: string; source: SourceTag; ok: boolean | null };
 /** reader 攔截到疑似指令注入時留下的常駐警示（來源工具 + 命中的旗標名）。 */
 export type ReaderAlert = { id: number; source: string; flags: string[] };
@@ -28,7 +36,7 @@ export type ChatState = {
   chips: Chip[];
   status: string;
   busy: boolean;
-  approval: { summary: string; hash: string } | null;
+  approval: { summary: string; hash: string; token: string } | null;
   readerAlerts: ReaderAlert[];
   charts: ChartItem[];
 };
@@ -283,14 +291,18 @@ export async function ask(question: string, model?: string): Promise<void> {
         setLive('');
         break;
       case 'approval_request':
-        emit({ approval: { summary: e.summary, hash: e.hash } });
+        emit({ approval: { summary: e.summary, hash: e.hash, token: e.token } });
         break;
       case 'final_answer': {
-        // 把本輪的圖表卡快照進這則訊息（供嵌入答案 [圖表] 錨點 + 歷史重播），並清空 live
+        // 把本輪的圖表卡快照 + 用到的工具名寫進這則訊息（嵌入 [圖表] 錨點 + 重播 + 分級免責），清空 live
         const turnCharts = state.charts;
+        const turnTools = state.chips.map((c) => c.name);
         setLive('');
         emit({
-          msgs: [...state.msgs, { id: Date.now(), who: 'agent', text: e.content, charts: turnCharts }],
+          msgs: [
+            ...state.msgs,
+            { id: Date.now(), who: 'agent', text: e.content, charts: turnCharts, tools: turnTools },
+          ],
           charts: [],
         });
         break;
@@ -317,8 +329,12 @@ export async function ask(question: string, model?: string): Promise<void> {
     if (live.trim()) {
       const t = live;
       const turnCharts = state.charts;
+      const turnTools = state.chips.map((c) => c.name);
       setLive('');
-      emit({ msgs: [...state.msgs, { id: Date.now(), who: 'agent', text: t, charts: turnCharts }], charts: [] });
+      emit({
+        msgs: [...state.msgs, { id: Date.now(), who: 'agent', text: t, charts: turnCharts, tools: turnTools }],
+        charts: [],
+      });
     }
   } catch (err) {
     if (!ac.signal.aborted) {
@@ -364,9 +380,36 @@ export async function loadSessionInto(id: string): Promise<void> {
       .filter((s): s is Extract<ReplayStep, { type: 'tool_result' }> => s.type === 'tool_result')
       .filter((s) => CHARTABLE_TOOLS.has(s.name))
       .map((s, i) => ({ id: i, tool: s.name, result: s.result }));
-    if (fa && fa.type === 'final_answer') msgs.push({ id: mid++, who: 'agent', text: fa.content, charts });
+    const tools = turn.steps
+      .filter((s): s is Extract<ReplayStep, { type: 'tool_call' }> => s.type === 'tool_call')
+      .map((s) => s.name);
+    if (fa && fa.type === 'final_answer')
+      msgs.push({ id: mid++, who: 'agent', text: fa.content, charts, tools });
   }
   currentSessionId = id;
   setLive('');
   emit({ msgs, chips: [], status: '', approval: null, readerAlerts: [], charts: [], busy: false });
+}
+
+/** 核准這筆待核准下單：打後端執行，結果以一則訊息呈現，並清掉核准卡。 */
+export async function approveOrder(): Promise<void> {
+  const a = state.approval;
+  if (!a) return;
+  emit({ approval: null });
+  const r = await approveOrderApi(a.token);
+  emit({
+    msgs: [
+      ...state.msgs,
+      { id: Date.now(), who: 'agent', text: r.ok ? `✅ 已核准並執行：${r.detail}` : `⚠ 核准失敗：${r.detail}` },
+    ],
+  });
+}
+
+/** 取消這筆待核准下單。 */
+export async function rejectOrder(): Promise<void> {
+  const a = state.approval;
+  if (!a) return;
+  emit({ approval: null });
+  await rejectOrderApi(a.token);
+  emit({ msgs: [...state.msgs, { id: Date.now(), who: 'agent', text: '已取消這筆待核准的下單。' }] });
 }

@@ -599,6 +599,15 @@ input:focus, textarea:focus { border-color: var(--cyan); }
 .chat-msg:not(.chat-md) { white-space: pre-wrap; }
 /* 帶圖表的答案：文字氣泡與圖表卡交錯排列的容器 */
 .chat-agent { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+/* 一則 agent 答案（內容 + 分級免責條）的外層 */
+.chat-turn { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+/* 分級免責條：資訊級中性、動用帳戶級琥珀、下單級玫紅 */
+.viz-disclaimer {
+  font-size: 10px; line-height: 1.5; color: var(--dim);
+  padding: 3px 8px; border-left: 2px solid var(--line);
+}
+.viz-disclaimer[data-tier='acct'] { border-left-color: var(--amber); }
+.viz-disclaimer[data-tier='exec'] { border-left-color: var(--rose); color: var(--txt); }
 
 /* MAIA 回答的 markdown 排版（renderMarkdown 產生的白名單 HTML；直角、貼齊像素語彙） */
 .chat-md > :first-child { margin-top: 0; }
