@@ -126,38 +126,48 @@ export function threadFor(roomId: string): Post[] {
 
 type Seed = { base: string; name: string; quote: Quote; price: number; volume: number };
 
+/**
+ * 快照自 MAX 公開行情，2026-08-01。
+ *
+ * 這批數字是**降級路徑**才會被看到的（`hud/feeds.ts` 的最後一層、
+ * `?fast=1` 的離線測試、面板在後端未起時的第一畫面），但它們仍然會被
+ * 當成真的價格讀。差一個數量級的種子會讓整個 demo 看起來像沒接上行情 ——
+ * 這正是它值得偶爾用真資料重刷一次的理由，重刷方式：
+ *
+ *   curl 'https://max-api.maicoin.com/api/v3/tickers?markets[]=btctwd&markets[]=...'
+ */
 const MARKET_SEEDS: Seed[] = [
-  { base: 'USDT', name: '泰達幣', quote: 'TWD', price: 32.48, volume: 168_000_000 },
-  { base: 'BTC', name: '比特幣', quote: 'TWD', price: 3_412_000, volume: 96_400_000 },
-  { base: 'ETH', name: '以太幣', quote: 'TWD', price: 118_600, volume: 41_200_000 },
-  { base: 'USDC', name: 'USD Coin', quote: 'TWD', price: 32.41, volume: 22_800_000 },
-  { base: 'SOL', name: 'Solana', quote: 'TWD', price: 6_820, volume: 18_900_000 },
-  { base: 'XRP', name: 'Ripple', quote: 'TWD', price: 78.4, volume: 14_600_000 },
-  { base: 'DOGE', name: '狗狗幣', quote: 'TWD', price: 6.18, volume: 9_300_000 },
-  { base: 'ADA', name: 'Cardano', quote: 'TWD', price: 25.3, volume: 6_100_000 },
-  { base: 'LINK', name: 'Chainlink', quote: 'TWD', price: 698, volume: 5_400_000 },
-  { base: 'AVAX', name: 'Avalanche', quote: 'TWD', price: 1_146, volume: 4_200_000 },
-  { base: 'DOT', name: 'Polkadot', quote: 'TWD', price: 191, volume: 3_100_000 },
-  { base: 'LTC', name: '萊特幣', quote: 'TWD', price: 3_284, volume: 2_800_000 },
-  { base: 'BCH', name: '比特幣現金', quote: 'TWD', price: 16_940, volume: 2_400_000 },
-  { base: 'TRX', name: 'TRON', quote: 'TWD', price: 9.46, volume: 1_900_000 },
-  { base: 'MAX', name: 'MAX Token', quote: 'TWD', price: 1.34, volume: 1_200_000 },
-  { base: 'SHIB', name: '柴犬幣', quote: 'TWD', price: 0.000748, volume: 880_000 },
+  { base: 'USDT', name: '泰達幣', quote: 'TWD', price: 32.4, volume: 168_000_000 },
+  { base: 'BTC', name: '比特幣', quote: 'TWD', price: 2_043_000, volume: 96_400_000 },
+  { base: 'ETH', name: '以太幣', quote: 'TWD', price: 60_535, volume: 41_200_000 },
+  { base: 'USDC', name: 'USD Coin', quote: 'TWD', price: 32.44, volume: 22_800_000 },
+  { base: 'SOL', name: 'Solana', quote: 'TWD', price: 2_368, volume: 18_900_000 },
+  { base: 'XRP', name: 'Ripple', quote: 'TWD', price: 34.57, volume: 14_600_000 },
+  { base: 'DOGE', name: '狗狗幣', quote: 'TWD', price: 2.28, volume: 9_300_000 },
+  { base: 'ADA', name: 'Cardano', quote: 'TWD', price: 5.52, volume: 6_100_000 },
+  { base: 'LINK', name: 'Chainlink', quote: 'TWD', price: 268.3, volume: 5_400_000 },
+  { base: 'AVAX', name: 'Avalanche', quote: 'TWD', price: 205, volume: 4_200_000 },
+  { base: 'DOT', name: 'Polkadot', quote: 'TWD', price: 24.84, volume: 3_100_000 },
+  { base: 'LTC', name: '萊特幣', quote: 'TWD', price: 1_439, volume: 2_800_000 },
+  { base: 'BCH', name: '比特幣現金', quote: 'TWD', price: 6_909, volume: 2_400_000 },
+  { base: 'TRX', name: 'TRON', quote: 'TWD', price: 10.52, volume: 1_900_000 },
+  { base: 'MAX', name: 'MAX Token', quote: 'TWD', price: 8.55, volume: 1_200_000 },
+  { base: 'SHIB', name: '柴犬幣', quote: 'TWD', price: 0.0001643, volume: 880_000 },
 
-  { base: 'BTC', name: '比特幣', quote: 'USDT', price: 105_040, volume: 12_400_000 },
-  { base: 'ETH', name: '以太幣', quote: 'USDT', price: 3_651, volume: 6_800_000 },
-  { base: 'SOL', name: 'Solana', quote: 'USDT', price: 209.9, volume: 3_200_000 },
-  { base: 'XRP', name: 'Ripple', quote: 'USDT', price: 2.414, volume: 2_100_000 },
-  { base: 'DOGE', name: '狗狗幣', quote: 'USDT', price: 0.1903, volume: 1_400_000 },
-  { base: 'ADA', name: 'Cardano', quote: 'USDT', price: 0.779, volume: 940_000 },
-  { base: 'LINK', name: 'Chainlink', quote: 'USDT', price: 21.49, volume: 810_000 },
-  { base: 'AVAX', name: 'Avalanche', quote: 'USDT', price: 35.28, volume: 620_000 },
-  { base: 'DOT', name: 'Polkadot', quote: 'USDT', price: 5.88, volume: 450_000 },
-  { base: 'LTC', name: '萊特幣', quote: 'USDT', price: 101.1, volume: 390_000 },
-  { base: 'BCH', name: '比特幣現金', quote: 'USDT', price: 521.5, volume: 280_000 },
-  { base: 'TRX', name: 'TRON', quote: 'USDT', price: 0.2912, volume: 210_000 },
+  { base: 'BTC', name: '比特幣', quote: 'USDT', price: 63_050, volume: 12_400_000 },
+  { base: 'ETH', name: '以太幣', quote: 'USDT', price: 1_868, volume: 6_800_000 },
+  { base: 'SOL', name: 'Solana', quote: 'USDT', price: 73.11, volume: 3_200_000 },
+  { base: 'XRP', name: 'Ripple', quote: 'USDT', price: 1.067, volume: 2_100_000 },
+  { base: 'DOGE', name: '狗狗幣', quote: 'USDT', price: 0.0702, volume: 1_400_000 },
+  { base: 'ADA', name: 'Cardano', quote: 'USDT', price: 0.1702, volume: 940_000 },
+  { base: 'LINK', name: 'Chainlink', quote: 'USDT', price: 8.26, volume: 810_000 },
+  { base: 'AVAX', name: 'Avalanche', quote: 'USDT', price: 6.42, volume: 620_000 },
+  { base: 'DOT', name: 'Polkadot', quote: 'USDT', price: 0.75, volume: 450_000 },
+  { base: 'LTC', name: '萊特幣', quote: 'USDT', price: 44.6, volume: 390_000 },
+  { base: 'BCH', name: '比特幣現金', quote: 'USDT', price: 211, volume: 280_000 },
+  { base: 'TRX', name: 'TRON', quote: 'USDT', price: 0.3268, volume: 210_000 },
 
-  { base: 'ETH', name: '以太幣', quote: 'BTC', price: 0.03476, volume: 142 },
+  { base: 'ETH', name: '以太幣', quote: 'BTC', price: 0.029576, volume: 142 },
 ];
 
 /** 現價會在原始價附近隨機漫步，讓 3 秒一次的輪詢看起來像真的在跳。 */
