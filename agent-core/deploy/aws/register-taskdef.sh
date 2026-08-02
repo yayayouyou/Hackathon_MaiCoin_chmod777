@@ -6,12 +6,18 @@
 # 什麼時候要重跑：改環境變數、換模型、調 CPU/記憶體、加減 Secrets Manager 的欄位。
 # 只是換程式碼的話不用 —— 那走 deploy-backend.sh（image tag 沒變，force-new-deployment 就會拉新的）。
 #
-# ⚠️ 這裡的環境變數**不是**直接照抄 agent-core/.env，有幾項刻意不同：
-#   RISK_MODE      → 強制 paper。公開網址不開實盤（本機 .env 維持 live 不受影響）
-#   LIVE_UNTIL     → 不帶。paper 模式下留著沒意義，還像個待引爆的開關
+# ⚠️ 這裡的環境變數**不是**直接照抄 agent-core/.env：
 #   AWS_PROFILE    → 不帶。容器裡沒有 ~/.aws，帶了 boto3 會找不到 profile 而爆掉，改用 task role
 #   OLLAMA_*       → 不帶。雲上走 Bedrock
 #   MAIA_COOKIE_SECURE=1 → .env 沒有，但這裡必須有（見下）
+#   MAIA_ACCOUNT_OWNERS / RISK_MODE / LIVE_UNTIL → 由 env.sh 決定，見那裡的警告
+#
+# ⚠️⚠️ 改這個檔案時務必先看一次線上現況：
+#   aws ecs describe-task-definition --task-definition maia-api \
+#     --query 'taskDefinition.containerDefinitions[0].environment'
+# 這份清單是「完整取代」而不是「合併」—— 少列一項就是把它從線上刪掉。
+# 曾經發生過：初版漏了 MAIA_ACCOUNT_OWNERS 與 3 個 API 金鑰，跑下去會把
+# 帳戶擁有者權限與那幾個資料源靜默關掉。
 
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 _require_creds
@@ -37,6 +43,7 @@ cat > "$TMP/taskdef.json" <<EOF
       { "name": "LLM_PROVIDER",        "value": "bedrock" },
       { "name": "BEDROCK_REGION",      "value": "${AWS_DEFAULT_REGION}" },
       { "name": "BEDROCK_MODEL",       "value": "${BEDROCK_MODEL}" },
+      { "name": "BEDROCK_MAX_TOKENS",  "value": "4096" },
       { "name": "AWS_DEFAULT_REGION",  "value": "${AWS_DEFAULT_REGION}" },
       { "name": "S3_REPORTS_BUCKET",   "value": "${REPORTS_BUCKET}" },
       { "name": "DYNAMODB_REGION",     "value": "${AWS_DEFAULT_REGION}" },
@@ -44,9 +51,13 @@ cat > "$TMP/taskdef.json" <<EOF
       { "name": "DYNAMODB_DISCUSSION_POSTS_TABLE",  "value": "maia-discussion-posts-${ACCOUNT_ID}" },
       { "name": "COMMUNITY_INSIGHTS_STORAGE",       "value": "dynamodb" },
       { "name": "DYNAMODB_COMMUNITY_INSIGHTS_TABLE","value": "maia_community_insights" },
-      { "name": "RISK_MODE",           "value": "paper" },
+      { "name": "MAIA_ACCOUNT_OWNERS", "value": "${MAIA_ACCOUNT_OWNERS}" },
+      { "name": "RISK_MODE",           "value": "${RISK_MODE}" },
+      { "name": "LIVE_UNTIL",          "value": "${LIVE_UNTIL}" },
       { "name": "TRADE_APPROVAL",      "value": "always" },
       { "name": "TRADE_AUTO_APPROVE_TWD", "value": "5000" },
+      { "name": "MAX_LEVERAGE",        "value": "1" },
+      { "name": "MAX_LOSS_PER_TRADE_USDT", "value": "100" },
       { "name": "READER_AGENT",        "value": "llm" },
       { "name": "AGENT_THINK",         "value": "auto" },
       { "name": "DEFAULT_EXCHANGE",    "value": "binance" },
@@ -54,13 +65,17 @@ cat > "$TMP/taskdef.json" <<EOF
       { "name": "DEFAULT_TIMEFRAME",   "value": "1h" },
       { "name": "THREADS_AUTO_SYNC",   "value": "true" },
       { "name": "THREADS_SYNC_INTERVAL_SECONDS", "value": "300" },
+      { "name": "THREADS_MENTIONS_NOT_BEFORE",   "value": "2026-08-01T07:23:16Z" },
       { "name": "MAIA_COOKIE_SECURE",  "value": "1" }
     ],
     "secrets": [
       { "name": "MAX_API_KEY",         "valueFrom": "${SECRET_ARN}:MAX_API_KEY::" },
       { "name": "MAX_API_SECRET",      "valueFrom": "${SECRET_ARN}:MAX_API_SECRET::" },
       { "name": "MAIA_ADMIN_TOKEN",    "valueFrom": "${SECRET_ARN}:MAIA_ADMIN_TOKEN::" },
-      { "name": "THREADS_ACCESS_TOKEN","valueFrom": "${SECRET_ARN}:THREADS_ACCESS_TOKEN::" }
+      { "name": "THREADS_ACCESS_TOKEN","valueFrom": "${SECRET_ARN}:THREADS_ACCESS_TOKEN::" },
+      { "name": "COINALYZE_API_KEY",   "valueFrom": "${SECRET_ARN}:COINALYZE_API_KEY::" },
+      { "name": "SOSOVALUE_API_KEY",   "valueFrom": "${SECRET_ARN}:SOSOVALUE_API_KEY::" },
+      { "name": "FRED_API_KEY",        "valueFrom": "${SECRET_ARN}:FRED_API_KEY::" }
     ],
     "logConfiguration": {
       "logDriver": "awslogs",
