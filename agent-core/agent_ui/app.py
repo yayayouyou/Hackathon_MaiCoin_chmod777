@@ -155,6 +155,13 @@ def start_strategy_bot_runner() -> None:
     strategy_bots.start_runner()
 
 
+@app.on_event("startup")
+def start_community_bots() -> None:
+    """社群 bot：Telegram polling（沒設 TELEGRAM_BOT_TOKEN 就自動略過）。LINE 走 /api/webhook/line。"""
+    from agent import community_bots
+    community_bots.start_telegram_bot()
+
+
 @app.on_event("shutdown")
 def stop_threads_auto_sync() -> None:
     _THREADS_SYNC_STOP.set()
@@ -162,6 +169,11 @@ def stop_threads_auto_sync() -> None:
     try:
         from agent import strategy_bots
         strategy_bots.stop_runner()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from agent import community_bots
+        community_bots.stop_telegram_bot()
     except Exception:  # noqa: BLE001
         pass
 
@@ -1556,6 +1568,33 @@ def delete_strategy_bot(bot_id: str):
     if not strategy_bots.delete_bot(bot_id):
         raise HTTPException(status_code=404, detail="找不到這支策略機器人。")
     return {"ok": True}
+
+
+# ── 社群 bot：LINE webhook ───────────────────────────────────
+@app.post("/api/webhook/line")
+async def line_webhook(request: Request):
+    """
+    LINE Messaging API webhook。
+
+    LINE 只能 webhook（它推到我們的伺服器），所以要有公開網址 —— 部署後就是
+    https://<CloudFront 網域>/api/webhook/line。驗簽用 channel secret 對**原始
+    body** 做 HMAC；通過後把事件丟背景執行緒處理，webhook 立刻回 200（agent 很慢，
+    不先回 200 的話 LINE 會判逾時並重送）。沒設 LINE 憑證時靜默回 200，避免後台一直紅。
+    """
+    from agent import community_bots
+    body = await request.body()
+    if not os.getenv("LINE_CHANNEL_SECRET") or not os.getenv("LINE_CHANNEL_ACCESS_TOKEN"):
+        return Response(status_code=200)
+    signature = request.headers.get("X-Line-Signature", "")
+    if not community_bots.verify_line_signature(body, signature):
+        raise HTTPException(status_code=400, detail="invalid signature")
+    try:
+        events = json.loads(body.decode("utf-8")).get("events", [])
+    except Exception:  # noqa: BLE001
+        events = []
+    if events:
+        threading.Thread(target=community_bots.handle_line_events, args=(events,), daemon=True).start()
+    return Response(status_code=200)
 
 
 if __name__ == "__main__":
