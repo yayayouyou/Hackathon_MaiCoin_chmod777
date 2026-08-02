@@ -24,6 +24,18 @@ aws s3 cp dist/index.html "s3://${WEB_BUCKET}/index.html" \
 aws s3 cp dist/config.js "s3://${WEB_BUCKET}/config.js" \
   --cache-control "no-cache" --content-type "application/javascript; charset=utf-8"
 
+# PWA：manifest / service worker / 圖示都在 dist 根目錄（不在 assets/，沒有內容雜湊）。
+# sw.js 一定要 no-cache —— 否則使用者的瀏覽器抱著舊 SW 不放，之後的更新永遠推不出去。
+echo "▸ 上傳 PWA 檔（manifest / sw.js / 圖示）"
+aws s3 cp dist/sw.js "s3://${WEB_BUCKET}/sw.js" \
+  --cache-control "no-cache" --content-type "application/javascript; charset=utf-8"
+aws s3 cp dist/manifest.webmanifest "s3://${WEB_BUCKET}/manifest.webmanifest" \
+  --cache-control "no-cache" --content-type "application/manifest+json; charset=utf-8"
+for f in icon-192.png icon-512.png icon-180.png favicon-32.png; do
+  aws s3 cp "dist/$f" "s3://${WEB_BUCKET}/$f" \
+    --cache-control "public,max-age=86400" --content-type "image/png"
+done
+
 echo "▸ CloudFront 失效"
 INV=$(aws cloudfront create-invalidation --distribution-id "$CF_DIST_ID" \
         --paths '/*' --query 'Invalidation.Id' --output text)
