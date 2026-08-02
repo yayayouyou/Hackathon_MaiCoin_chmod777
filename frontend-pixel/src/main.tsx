@@ -32,3 +32,16 @@ try {
 startFeeds(); // ④ 內含 ?fast=1 早退
 createRoot(document.getElementById('hud-root')!).render(<Hud />);
 createRoot(document.getElementById('ui-root')!).render(<App />);
+
+/**
+ * ⑤ PWA service worker —— 讓手機可把 MAIA 裝成 app。
+ *
+ * 只在**正式環境**註冊：dev 下 SW 會攔截 Vite 的模組請求、把 HMR 弄壞。
+ * 部署（CloudFront）是 prod build，SW 就會生效 → Android 跳「安裝」、
+ * iOS 走 apple-touch-icon「加入主畫面」。SW 本身刻意不快取 /api/*（見 sw.js）。
+ */
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('[pwa] sw 註冊失敗', e));
+  });
+}

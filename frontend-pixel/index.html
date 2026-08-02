@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAIA · 數位廣場</title>
+
+    <!-- PWA：手機可「加入主畫面／安裝」成全螢幕 app（見 public/manifest.webmanifest 與 sw.js） -->
+    <meta name="theme-color" content="#0e1422" />
+    <meta name="description" content="MAIA · AI 加密貨幣交易副駕 —— 用走的，把虛擬貨幣的每一種看法走一遍。" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <!-- iOS Safari 走這一組（不吃 manifest 的 icons，要各自宣告） -->
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MAIA" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
     <!-- 執行期覆蓋後端網址。改一個 S3 物件 + invalidate，30 秒解決，不用重 build -->
     <script src="/config.js"></script>
   </head>
