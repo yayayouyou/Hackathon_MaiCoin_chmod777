@@ -1,0 +1,31 @@
+# agent_ui FastAPI 服務容器 —— 像素世界前端真正打的後端（ECS Fargate / ARM64）
+# build:  docker buildx build --platform linux/arm64 -f deploy/Dockerfile.api -t maia-api .
+#
+# 與同層 Dockerfile.agentcore 的差別：那支是 AgentCore Runtime 合約入口（/invocations + /ping），
+# 這支是前端 /api/* 的 25 條路由。兩者共用同一份 skills/ 與 agent/，只是入口不同。
+FROM --platform=linux/arm64 python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# 這些目錄被 .dockerignore 擋在 image 外（本機狀態不該進 image），
+# 但 agent_memory/ 與 run_cards/ 的寫入端沒有 makedirs，缺目錄會在第一次寫入時炸。
+RUN mkdir -p agent_memory run_cards audit_logs conversation_logs
+
+ENV LLM_PROVIDER=bedrock \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+# --proxy-headers + --forwarded-allow-ips：後端在 CloudFront → ALB 兩層代理後面，
+# 沒有這兩個旗標 request.url.scheme 永遠是 http，session cookie 就不會帶 Secure，
+# 症狀是「登入成功但每一次請求都說沒登入」（見 agent_ui/app.py:_cookie_secure）。
+CMD ["uvicorn", "agent_ui.app:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]
