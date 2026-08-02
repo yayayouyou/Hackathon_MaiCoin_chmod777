@@ -45,6 +45,13 @@ export default defineConfig({
       },
     },
   },
+  // `vite preview`（prod build 本機預覽，用來測 PWA 安裝）不吃 server.proxy，
+  // 要另外宣告，否則同源 /api 會打到 4173 自己而 404、整頁沒資料。
+  preview: {
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+    },
+  },
   build: {
     rollupOptions: {
       /**

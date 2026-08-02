@@ -333,6 +333,17 @@ def run_backtest(
         return {
             "strategy": strategy_name,
             "params": params,
+            # 回測完給 MAIA 的「下一步」提示 —— 回測與策略機器人用**同一套**策略名與
+            # 參數，所以回測完可以「原封不動」打包成自動 paper 機器人。把這段放進工具
+            # 結果，MAIA 就會在回測結論後主動提示使用者「要不要打包成機器人」，而不是
+            # 等使用者自己想到。這是「回測 → 一鍵自動化」那條 demo 動線的接點。
+            "packageable_as_bot": {
+                "strategy_type": strategy_name,
+                "params": params,
+                "suggestion": "這個策略可以一鍵打包成一支 24 小時自動運行的 paper 機器人"
+                              "（自動進出場、即時回報損益）。想讓它自動跑的話，回覆"
+                              "「幫我打包成機器人」就好，會沿用這次回測的策略與參數。",
+            },
             "performance": {
                 "initial_capital_usd": initial_capital,
                 "final_value_usd": final_value,
