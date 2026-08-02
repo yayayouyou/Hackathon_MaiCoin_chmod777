@@ -222,6 +222,17 @@ docker buildx build --platform linux/arm64 \
 
 服務合約四項齊備:`/invocations`(SSE)、`/ping`(Healthy / HealthyBusy)、ARM64、`0.0.0.0:8080`。
 
+**2026-08-02 部署狀態**:
+
+- AWS Bedrock AgentCore Runtime `maia_agent` 已部署，runtime ID 為 `maia_agent-4dRDgpAt4P`，狀態 `READY`。
+- `frontend-pixel` 已以 Amazon CloudFront + S3 對外部署：<https://d1kok6d2wto1xz.cloudfront.net/>（2026-08-02 實測 HTTP 200，頁面標題「MAIA · 數位廣場」）；同網域 `/api/config` 也回 200，表示 CloudFront `/api/*` 同源後端路由已啟用。
+- `/api/*` 實際路徑是 CloudFront → ALB → ECS Fargate `maia-api`（ARM64、固定 1 task）；後端 image 在 ECR，金鑰由 Secrets Manager `maia/app` 注入，log 寫入 CloudWatch Logs。
+- 正式 LLM 路徑使用 Amazon Bedrock Claude；`BedrockProvider.chat_stream()` 已接 `ConverseStream`，會產生 `answer_delta`。
+- 雲端共用資料使用 DynamoDB（玩家、session、討論區、留言、社群摘要）；S3 用於報告、對話紀錄與 Transcribe 暫存音檔。
+- Bedrock provider 有 18 項專屬自動化測試，包含文字串流、工具參數 partial JSON 重組、錯誤降級與主迴圈路分支。
+
+這些是目前可由程式碼、自動化測試、HTTP 回應與部署設定直接驗證的部分。Amplify Hosting、EventBridge Scheduler、Lambda 與 Bedrock Guardrails 沒有使用。
+
 ---
 
 ## 文件
@@ -229,6 +240,8 @@ docker buildx build --platform linux/arm64 \
 | 檔案 | 內容 |
 |---|---|
 | [`docs/架構與實作計畫.md`](docs/架構與實作計畫.md) | 系統架構、agent 設計、AWS 部署、**已知缺口誠實清單** |
+| [`docs/AWS服務盤點.md`](docs/AWS服務盤點.md) | AWS 已接入/已部署、待確認與規劃中服務的正準狀態 |
+| [`docs/AWS部署.md`](docs/AWS部署.md) | CloudFront、ALB、ECS Fargate、ECR、Secrets Manager 與 AgentCore 的實際資源與重新部署步驟 |
 | [`docs/前端框架規格.md`](docs/前端框架規格.md) | 像素世界的擴充架構:Zone/Panel 註冊表、HUD 分層、多人協作契約 |
 | [`docs/agent-repo-整合計畫.md`](docs/agent-repo-整合計畫.md) | agent 系統併入本 repo 的盤點與判決 |
 | [`docs/競賽約束與資源.md`](docs/競賽約束與資源.md) | 競賽事實、MAX API 能力、**費用/權限/用量表** |

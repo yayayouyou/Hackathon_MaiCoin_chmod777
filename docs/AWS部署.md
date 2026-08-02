@@ -36,7 +36,7 @@
                         └──┬────────┬────────┬─────────┬───┘
                            ▼        ▼        ▼         ▼
                       Bedrock    MAX API  DynamoDB    S3
-                   Sonnet 4.6    (HMAC)    ×5 表    reports/
+                    Opus 4.5     (HMAC)    ×5 表    reports/
                                                     sessions
 
   ── 與上面那條並行、互不影響 ──────────────────────────────
@@ -73,7 +73,7 @@
 
 | 服務 | 資源 |
 |---|---|
-| Bedrock | `us.anthropic.claude-sonnet-4-6`（跨區推理設定檔） |
+| Bedrock | `us.anthropic.claude-opus-4-5-20251101-v1:0`（跨區推理設定檔；線上 taskdef revision 2 基準） |
 | DynamoDB | `maia_players` · `maia_sessions` · `maia-discussion-spaces-*` · `maia-discussion-posts-*` · `maia_community_insights` |
 | S3 | `maia-218322564712-20260801`（reports / sessions） |
 
@@ -90,7 +90,7 @@ User: .../WSParticipantRole/Participant is not authorized to perform:
 apprunner:ListServices ... because no service control policy allows the action
 ```
 
-`docs/架構與實作計畫.md` 把 App Runner 列為替代方案 —— 在這個帳號上它不是選項，所以走 ECS Fargate + ALB。
+早期曾評估 App Runner，但在這個帳號上它不是選項；現行架構與文件均以 ECS Fargate + ALB 為準。
 
 **永遠只有 1 個 task。** service 設 `maximumPercent=100` / `minimumHealthyPercent=0`，
 也就是先停舊的再起新的。因為核准 token 是**行程內狀態**（`agent/trade_approval.py`），

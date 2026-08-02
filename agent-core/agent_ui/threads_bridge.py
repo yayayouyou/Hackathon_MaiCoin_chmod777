@@ -1,8 +1,8 @@
 """Small, safe Threads bridge for the hackathon demo.
 
 External content is stored as data only.  It is never passed to the trading
-executor.  JSON storage keeps the demo self-contained; replace it with
-DynamoDB when authentication and multi-instance deployment are added.
+executor.  Production uses DynamoDB for shared discussion spaces/posts;
+atomic JSON files remain available as a self-contained local fallback.
 """
 from __future__ import annotations
 

@@ -50,7 +50,7 @@ flowchart TB
 | **狀態驗證 / 淨化** | `reader_agent` 淨化不可信外部內容（防提示注入）、`critic_agent` 在含買賣建議時審查決策、`_sanitize_tool_args` 參數白名單擋 `mode=live` 注入 | `agent/ollama_agent.py`、`agent/reader_agent.py`、`agent/critic_agent.py` |
 | **自適應存取記憶** | 分層記憶：`profile.json`（使用者偏好，每輪注入 context）+ `journal.jsonl`（交易日誌，近期注入 + `recall_history` 關鍵字搜尋） | `agent/memory_store.py` → `agent_memory/` |
 | **把軌跡呈現給使用者** | provenance「依據列」把 MAIA 查了什麼、依據什麼攤在答案下方；分級免責條 | `frontend-pixel`（provenance/disclaimer）＋ `routing_log.jsonl` |
-| **安全互鎖（狀態機）** | 下單一律「提議 → 凍結計畫（SHA256）→ 人工核准 → 依凍結計畫執行」；`RISK_MODE` paper/live 預設 paper；`risk_guard` 單筆物理鎖；`live_guard` 停手/授權到期/累計曝險 | `agent/trade_approval.py`、`skills/execution/{order_executor,risk_guard,live_guard}.py` |
+| **安全互鎖（狀態機）** | 下單一律「提議 → 凍結計畫（SHA256）→ 人工核准 → 依凍結計畫執行」；程式預設 `RISK_MODE=paper`，但 2026-08-02 公開 demo 部署刻意覆寫為 live 且有 `LIVE_UNTIL`；`risk_guard` 單筆物理鎖；`live_guard` 停手/授權到期/累計曝險 | `agent/trade_approval.py`、`skills/execution/{order_executor,risk_guard,live_guard}.py`、`deploy/aws/env.sh` |
 | **把策略變成自主 loop** | 策略機器人 runner：daemon 迴圈抓真實 MAX K 線 → 用與回測同一套訊號評估 → 模擬成交 → 寫 per-bot 台帳（全 paper） | `agent/strategy_bots.py` |
 
 ### 3.1 最強的具體對應：routing

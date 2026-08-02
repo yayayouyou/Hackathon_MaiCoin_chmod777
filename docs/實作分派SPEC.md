@@ -105,10 +105,10 @@ cd agent-core && python -m pytest -q
 
 | # | 工作包 | 軌 | 檔案落點 | 驗收 |
 |---|---|---|---|---|
-| **W1** | **Bedrock 端到端首驗** | I | `agent-core/agent/llm/bedrock.py` | `LLM_PROVIDER=bedrock` 實跑一輪含工具呼叫;**ARM64 容器內也要驗一次**。用 `aws bedrock list-inference-profiles` 查帳號實際可用的最新 Claude,不要沿用寫死的 2024 model id |
+| **W1 ✅** | **Bedrock 端到端驗證** | I | `agent-core/agent/llm/bedrock.py` | 已實跑 Bedrock 對話/社群摘要，並部署 AgentCore Runtime `maia_agent`（`READY`）；最新 ECS 部署腳本 model 為 Claude Opus 4.5 |
 | **W2** | **CORS / proxy** | I | `frontend-pixel/vite.config.ts` | 加 3 行 proxy 指向 `localhost:8000`。**沒有它一行 API 都呼叫不到** |
 | **W3** | **後端 status 心跳** | B | `agent-core/agent_ui/app.py` | `run_agent_turn` 每次 LLM 呼叫前 yield `status`;event_stream 外層 15 秒無事件就 `yield ": ping\n\n"` |
-| **W4** | **前端 paced reveal** | B | `frontend-pixel/src/api/agent.ts`(新) | Bedrock 無 `converse_stream`,收到 `final_answer` 後以 20 字/秒吐出;等待期間顯示「MAIA 正在讀《工具中文名》…」+ 已過秒數 |
+| **W4 ✅** | **Bedrock 真串流** | B | `agent-core/agent/llm/bedrock.py` · `agent/ollama_agent.py` | `ConverseStream` 的文字 delta 已轉成 `answer_delta`；前端可保留狀態與心跳，不再把 paced reveal 當作 Bedrock 串流替代品 |
 | **W5** | **api 三層** | A | `src/api/{transport,adapters,index}.ts` | mock 換成 fetch。**既有 10 個函式簽名一字不動**(156 項測試靠它);新能力走 `maia.*` 命名空間 |
 | **W6** | **SSE 12 事件接進 UI** | B | `src/api/agent.ts` · `ui/chatStore.ts` | 見 §5 的事件表。解析器約 20 行可從 `agent_ui/templates/index.html:2913-2930` 原封不動搬 |
 | **W7** | **`#hud-root` 四個 block** | C | `src/hud/**` | 行情條 / 持倉市值 / **agent 狀態+工具晶片** / 資料來源徽章。新增 `tests/hud.mjs` 斷言走動 2 秒期間 `#hud-root` 變動 = 0 |
@@ -148,7 +148,7 @@ Lv2 唯讀餘額(+5%,與台上真下單解耦)· Bedrock Guardrails 一條 denie
 | `tool_result` | 540, 544, 548 | `{name, result}` | 對應 step 的 `ok` 落定 + 觸發圖卡 |
 | `reader` | 553+ | `{name, injection_detected, flags}` | **`injection_detected` 為 true 時 HUD 閃「已攔截疑似指令注入」** —— AI 設計 15% 的免費得分點,目前完全沒有出口 |
 | `approval_request` | 518–525 | `{name, token, plan, hash, summary}` | `hud.approval.set(plan)` + `setInputCaptured(true)` |
-| `answer_delta` | 475 | `{content}` | 累積進 paced reveal(**Bedrock 路徑上不會出現**) |
+| `answer_delta` | 主迴圈路串流分支 | `{content}` | 累積顯示；Ollama 與 Bedrock `ConverseStream` 路徑都會出現 |
 | `answer_reset` | 501 | `{}` | **必須實作** —— 否則小模型「邊講邊呼叫工具」的前導文字會留在畫面上變成假答案 |
 | `final_answer` | 628, 636 | `{content}` | 收尾 + `[圖表]` 錨點解析 + 分級免責 |
 | `error` | 395, 449, 484 | `{content}` | 帶「重試」,**已串出的字不清掉** |
@@ -231,7 +231,7 @@ error TS2820: Type '"mypanelll"' is not assignable to type
 ## 8. 三句不能出現在簡報裡的話
 
 1. **「我們用 Strands Agents SDK」** —— 全庫 grep `strands` **零命中**
-2. **「我們的大腦是本地 Ollama + gemma4」** —— 那是 `FRONTEND_HANDOFF.md:9` 的舊文,正式路徑是 Bedrock
+2. **「我們的大腦是本地 Ollama + gemma4」** —— 舊版 `FRONTEND_HANDOFF.md` 曾如此描述，現已更正；正式路徑是 Bedrock
 3. **「我們反向工程了 CoinGlass 的 AES-128-ECB 加密」** —— 已是死碼且有 ToS 風險。改講「我們主動移除了對逆向抓取的依賴,改用可持續的免費第一方來源」
 
 ---

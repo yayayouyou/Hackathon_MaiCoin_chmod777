@@ -4,6 +4,8 @@
 > 前提：`docs/前端框架規格.md`（1326 行）**已拍板，本文相容它、不推翻它**。本文只在三處明確標註「規格前提已變更」並提出修訂。
 > 所有數字都是我實際下指令量到的，不是讀文件轉述。文件與程式碼衝突時一律以程式碼為準。
 > 本文只新增這一個檔案，未修改 repo 任何其他檔案。
+>
+> **2026-08-02 狀態追記**：這是整併前的決策紀錄，不是未完成待辦。Bedrock 端到端呼叫、`ConverseStream`、18 項 provider 測試與 AgentCore Runtime AWS 部署都已完成；下文的相關項目已改標「已解」，工時與步驟僅保留為演進紀錄。
 
 ---
 
@@ -15,8 +17,8 @@
 | **怎麼整合** | `git subtree merge` 掛進 `agent-core/`（保留 111 個 commit）；同批刪掉 `backend/` 與 `frontend/`，但先搶救 `backend/maia/` 的 4 個模組（約 344 行）。 |
 | **體積** | 已追蹤檔 123 → 約 257 個、1.42 MB → 約 2.89 MB；但 `.git` 從 **39.28 MiB 縮到約 5 MB**（刪掉未合併的 `origin/eason` 42.4 MB 素材分支）。**程式碼變多、交付 repo 反而變小。** |
 | **前端** | `frontend-pixel` 是唯一前端不變。106 個工具分四層落地：**3 個新 Zone + 5 個新 Panel + 1 個 HUD 核准疊層 + 約 55 個只走 agent 對話 + 約 12 個不接**。四個 append 點各加 3–6 行，六個凍結檔一行都不用動。 |
-| **最大風險** | Bedrock 那 163 行**從未被執行驗證過**（零測試 + venv 沒裝 boto3），而它是唯一合規的推理路徑。 |
-| **必須先拍板** | 見 §11，共 14 項。其中 D1（Bedrock 首驗）、D3（CSV 定位）、D13（賽前 commit 是否合規）不解掉，後面都是空談。 |
+| **最大風險（現況）** | Bedrock 已有真串流與自動化測試，AgentCore Runtime `maia_agent` 已部署且為 `READY`。目前剩餘風險是 prompt caching、多實例核准狀態與尚未雲端化的審計/run-card 資料。 |
+| **仍需團隊確認** | 見 §11。D1（Bedrock 驗證）已解；CSV 定位、公開部署的帳戶邊界、Secrets Manager 與賽制/commit 合規性仍屬團隊決策。 |
 
 ---
 
@@ -53,8 +55,8 @@
 | **HITL 下單互鎖** | `agent/trade_approval.py` + `skills/execution/live_guard.py` | AI 設計 15% + 主題 10% | 模型只能「提議」→ SHA256 凍結計畫（只雜湊意圖欄位，排除市價避免價格跳動 mismatch）→ 120 秒**單調時鐘** TTL（防 NTP 回撥）→ 執行前再驗雜湊 → 依凍結模式而非重讀 env → 四道防線再跑一次。多數參賽作品的 AI 下單就是一個直接呼叫。**後端 100% 完成，前端零實作。** |
 | **實盤四道防線** | `skills/execution/live_guard.py:62-283` | 技術可行性 20% | Kill switch 刻意用檔案（「出事當下 touch 一個檔案任何人都做得到」）、`LIVE_UNTIL` 授權到期、24h 滾動曝險（20 萬 TWD / 20 筆）、被擋下的決策也寫台帳（「只記成功的等於只留下一半的故事」）。註解本身就是簡報素材。18 個測試把每道防線的繞過情境都覆蓋。 |
 | **Reader 不可信內容淨化層** | `agent/reader_agent.py`（274 行） | AI 設計 15% | 破解零寬字 / 同形字 / leet / 拆字 / base64 / hex 六種混淆，且 base64 是「**解碼後**含注入關鍵字才判定」以免誤殺鏈上地址與 txid。同類作品罕見的深度。 |
-| **Bedrock Converse 實作** | `agent/llm/bedrock.py`（163 行） | 硬約束「限用 AWS 基礎模型」 | 真實實作。處理了三個 Converse 實務陷阱：空 text block 補空白、tool 結果合併成單一 `user.toolResult`、相鄰同 role 合併（Bedrock 要求嚴格交替）。切換只要 `LLM_PROVIDER=bedrock`，主迴圈 636 行零改動。⚠️ 但零測試，見 §2。 |
-| **AgentCore Runtime 入口** | `deploy/agentcore_app.py` + `Dockerfile.agentcore` | 技術可行性 20% | `/invocations`(SSE) + `/ping`(Healthy/HealthyBusy) + ARM64 + 0.0.0.0:8080 四項合約齊備，實測 import 到可服務 0.6 秒。**AWS 架構圖可以畫實線，而且能當場 curl 給評審看。** |
+| **Bedrock Converse 實作** | `agent/llm/bedrock.py`（264 行） | 硬約束「限用 AWS 基礎模型」 | 已實作 Converse + ConverseStream、tool 雙向翻譯、partial JSON 重組與 `answer_delta`。`tests/test_bedrock_provider.py` 共 18 項測試且全數通過。 |
+| **AgentCore Runtime（已部署）** | `deploy/agentcore_app.py` + `Dockerfile.agentcore` | 技術可行性 20% | AWS runtime `maia_agent`（ID `maia_agent-4dRDgpAt4P`）已是 `READY`；`/invocations`(SSE) + `/ping`(Healthy/HealthyBusy) + ARM64 + 0.0.0.0:8080 四項合約齊備。 |
 | **MAX Private API 深度** | `skills/max_exchange/max_private.py` | **+5% 加分項** | 13 個唯讀端點 + 下單撤單，自建 HMAC-SHA256 簽章（GET/POST/DELETE 共用）。最強證據是 `position_ledger.fetch_events()` 用 my_trades / converts / rewards / fund_transactions / accounts **五支端點做對帳** —— 這是「真的用了 Private API 而不是只查餘額」。 |
 | **審計鏈** | `agent/audit_logger.py:35-57` | AI 設計 15% | 開場先讀檔取上一筆 `chain_hash`，是真的一條跨會話鏈而非每筆獨立雜湊。「每一個 AI 決策都可回溯且可驗證未被竄改」。 |
 | **個人帳本三件組** | `position_ledger → lot_engine → shadow_account` | 商業 20% + 智慧分析 | FIFO/移動平均雙配對、成本來源分級（known/market/unknown/zero）、對帳 confidence、**樣本不足就不下結論**（`shadow_account.py:46-51`）。註解裡寫著「590 筆 MAX 獎勵一度把攤平樣本灌到 945 筆」——這是實際跑過真帳戶才寫得出來的。 |
@@ -78,17 +80,17 @@
 
 | # | 負債 | 證據 | 嚴重度 |
 |---|---|---|---|
-| L1 | **Bedrock 無串流** | 全 repo `grep converse_stream` 零命中；只有 `agent/llm/ollama.py:167` 有 `chat_stream`；`ollama_agent.py:469` 靠 `hasattr` 判斷 | 台上靜止數十秒 |
-| L2 | **Bedrock 零測試 + venv 沒裝 boto3** | `tests/test_llm_providers.py` 只測 Ollama/OpenRouter；`LLM_PROVIDER=bedrock` 實跑回「未安裝 boto3」 | 唯一合規路徑未驗證 |
+| L1 ✅ | **Bedrock 真串流** | `BedrockProvider.chat_stream()` 已接 `converse_stream`，主迴圈路會產生 `answer_delta` | 已解 |
+| L2 ✅ | **Bedrock 測試與 SDK** | boto3 已安裝；18 項 Bedrock provider 專屬測試全數通過，且已實跑 AWS | 已解 |
 | L3 | **沒有 `.dockerignore`，Dockerfile 是 `COPY . .`** | `ls .dockerignore` → No such file；`Dockerfile.agentcore:14` | **金鑰會進 image layer** |
 | L4 | **`agent_ui/app.py` 的 `logger` NameError** | 檔案 8–19 行 import 清單無 `logging` 也無 `loguru`，卻在 `:428 :440 :451` 呼叫 `logger.warning` | 三個端點在「沒有 MAX 金鑰」時 500 而非優雅降級 ——**那正是評審機器的狀態** |
-| L5 | **`.env.example` 缺 16+ 個關鍵變數** | 32 個 key 裡 `LLM_PROVIDER` / `BEDROCK_*` / `OPENROUTER_*` 命中數 = **0** | 評審 clone 照做只會跑到 Ollama，扣完成度 |
+| L5 | **`.env.example` 的正式值仍需覆寫** | 已有 `LLM_PROVIDER` / `BEDROCK_*` / DynamoDB / Threads 範例，但 provider 預設仍是 Ollama，fallback 仍是 2024 model ID | 正式部署要明確設成 Bedrock 與可用 inference profile |
 | L6 | **`/api/models` 沒有 bedrock 分支** | `app.py:115` 只判 `== "openrouter"`，否則打 Ollama（10 秒 timeout） | 評審螢幕上顯示 `gemma4:12b-mlx` 而不是 Claude |
 | L7 | **核准 token 與 secret 都是行程內狀態** | `trade_approval.py:117` module 級 dict（作者自己在 `:15-16` 註明）；`app.py:56` import 時產生 | 多 worker/多實例 → 核准回 403 或「權杖不存在」 |
 | L8 | **帳戶端點零認證** | `/api/dashboard` `/api/positions` `/api/account_activity` 直吐真實餘額與損益 | 硬性交付要求公開部署網址 = 公開帳戶 |
-| L9 | **所有狀態寫本機檔案系統** | `agent_memory/` `audit_logs/` `conversation_logs/` `run_cards/` `strategies.json` | 容器重啟就沒了，包含「不可竄改審計鏈」這個賣點 |
+| L9 | **部分狀態仍在本機檔案** | 玩家/session、討論/留言、社群摘要已用 DynamoDB，報告/對話可用 S3；審計鏈、部分 agent memory 與 run card 仍本機化 | 未遷移的部分容器重啟後可能遺失 |
 | L10 | **語意工具檢索硬綁本地 ollama** | `tool_embeddings.py:27-31` 打 `OLLAMA_HOST/api/embed` 抓 bge-m3；`:119-121` 失敗一次 `_index_failed=True` 永不重試 | 上雲**靜默**退化成純關鍵字，只有 `logger.debug` |
-| L11 | **作者三份文件會反噬** | `FRONTEND_HANDOFF.md:9` 明講「大腦是本地 Ollama + gemma4:12b-mlx」；`README.md:9` 說六大模組（實際 9 個）、`:60` 說 135 測試（實際 725）、`:45` 印著 `d:\Skill_for_maicoin_agent\` | 原樣繳交 = 在評審面前自白違反硬約束 |
+| L11 ✅ | **主要 README / 前端交接文件已對齊 Bedrock** | `FRONTEND_HANDOFF.md` 現已區分正式 Bedrock 與本機 Ollama，README 也已補 AWS 實際部署狀態 | 已解 |
 | L12 | **CoinGlass AES-ECB 逆向解密死碼** | `skills/market_data/coinglass_scraper.py:23-99`（含硬編碼 webpack 金鑰表），生產路徑已全改走免費第一方來源，只剩測試在引用 | 逆向他人網站加密的程式碼隨「完整原始碼」繳交，有 ToS 與觀感風險 |
 | L13 | **工具結果硬截斷 4000 字元** | `ollama_agent.py:296-297` | K 線 100 根 + 指標很容易超過，模型拿到壞掉的 JSON 尾巴；與 prompt 的 G12「至少取 50~100 根 K 線」直接衝突 |
 | L14 | **每輪最多 3 次額外 LLM 呼叫 + 62 工具 schema + 無 prompt caching** | 實測「分析一下 BTC 該不該買」路由出 **62 個工具 ≈ 8,888 token**；`grep cachePoint` 在 bedrock.py 零命中 | 一題可能 12 次 Converse、數十秒 |
@@ -104,50 +106,50 @@
 
 > 依「不解會怎樣」排序，不依難度。
 
-### BLOCKER-1 · Bedrock 合規：能跑，但從未被驗證過
+### BLOCKER-1 · Bedrock 合規 —— ✅ 2026-08-02 已驗證
 
-**這是整份計畫風險最高的一項。**
+**這是整併時風險最高的一項，目前已解。**
 
 | 面向 | 實測狀態 |
 |---|---|
-| 程式碼存在嗎 | ✅ `agent/llm/bedrock.py` 163 行，Converse API + 完整 tool 雙向翻譯 |
+| 程式碼存在嗎 | ✅ `agent/llm/bedrock.py` 264 行，Converse + ConverseStream + 完整 tool 雙向翻譯 |
 | 預設走哪個 | ❌ `factory.py:31` = `os.getenv("LLM_PROVIDER", "ollama")` → **預設 ollama** |
-| 有測試嗎 | ❌ `tests/test_llm_providers.py` 只測 Ollama 與 OpenRouter |
-| boto3 裝了嗎 | ❌ 實跑 `LLM_PROVIDER=bedrock` → `LLMError: 未安裝 boto3`（`requirements.txt:83` 有列，venv 沒裝） |
-| 串流 | ❌ 全 repo 無 `converse_stream` |
+| 有測試嗎 | ✅ `tests/test_bedrock_provider.py` 18 項，包含文字串流、partial JSON tool args、異常處理與主迴圈路分支 |
+| boto3 裝了嗎 | ✅ 專案 venv 已安裝，AWS Bedrock、DynamoDB、S3 也已實際連線 |
+| 串流 | ✅ `BedrockProvider.chat_stream()` 使用 `converse_stream`，主迴圈路輸出 `answer_delta` |
 | model id | ⚠️ `bedrock.py:19` = `us.anthropic.claude-3-5-sonnet-20241022-v2:0`（**2024 年的模型**） |
 | region | `BEDROCK_REGION` → `AWS_REGION` → `us-west-2` |
 | 結構化輸出 | ⚠️ `bedrock.py:132` 只是附加一句 system「只回 JSON」，**不是 constrained decoding**。依賴它的三處（`personas.classify_persona_llm`、traits 摘要、`social_analysis`）都有 try/except 不會炸，但會**靜默降級** |
-| 容器層 | ✅ `Dockerfile.agentcore:17` 已把 `LLM_PROVIDER=bedrock` 寫死在 ENV |
+| 容器/雲端 | ✅ `Dockerfile.agentcore` 已設 `LLM_PROVIDER=bedrock`；AWS runtime `maia_agent` 已部署且為 `READY` |
 
-**必做（合計約 1 小時 + 3 小時驗證）：**
+**整併時的必做項與現況：**
 
-1. `pip install boto3`，並在 `requirements.txt` 釘版本。
-2. **不要照抄 `bedrock.py:19` 那個 model id。** 用你們自己的帳號查實際有 model access 的最新 Claude，寫進 `.env` 的 `BEDROCK_MODEL`（常數只是 fallback，env 可覆蓋，不必改程式碼）：
+1. ✅ boto3 已安裝並在 `requirements.txt` 釘版本。
+2. ✅ 最新 AWS 部署腳本以 `BEDROCK_MODEL=us.anthropic.claude-opus-4-5-20251101-v1:0` 覆寫 fallback。新帳號/區域仍應查實際 model access：
    ```bash
    aws bedrock list-inference-profiles --region <你們的 region>
    aws bedrock list-foundation-models --region <region> --by-provider anthropic
    ```
-3. `.env.example` 補齊 `LLM_PROVIDER` / `BEDROCK_MODEL` / `BEDROCK_REGION` / `BEDROCK_MAX_TOKENS` / `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` / `OLLAMA_MODEL`，並標明**每個變數對哪個 provider 有效**（`AGENT_THINK` 在 Bedrock 上無效卻沒標註，會誤導）。
-4. `/api/models` 加一個 bedrock 分支。**這是「增加」不是「移除」，完全不違反指示 6。**
-5. **端到端實跑一次**，而且要在 ARM64 容器內也跑一次（本機 Python 3.13.14 vs Dockerfile `python:3.12-slim`，pandas 3.0.3 / numpy 2.4.6 若缺 arm64+cp312 wheel 就會用容器裡的 gcc 硬編譯）。
+3. ✅ `.env.example` 已有 `LLM_PROVIDER` / `BEDROCK_*` / AWS / DynamoDB 等範例；但正式環境仍必須覆寫 Ollama 預設值。
+4. ⚠️ `/api/models` 的 Bedrock 分支仍需根據前端是否實際使用模型清單來決定是否補上。
+5. ✅ 已實跑 Bedrock 對話/摘要並部署 AgentCore ARM64 runtime。
 
 > **多供應商抽象層是資產，不是要拿掉的東西。** 簡報應該正面講：「同一份 agent loop、三個推理後端：正式 demo 走 Bedrock（合規）、開發期走本地 Ollama（零成本、讓 725 個測試可以無限跑）、Bedrock 配額或區域異常時 30 秒切 OpenRouter 續命。金融場景的推理腦是單點故障，我們用 60 行 factory 把它變成可替換元件。」這正好答「技術可行性 20% 明文要求說明費用、權限、用量」。
 
-### BLOCKER-2 · Bedrock 無串流 + 62 工具 × 8 步 = 台上靜止
+### BLOCKER-2 · Bedrock 串流 —— ✅ 已解；大型 tool schema 成本仍在
 
-實測「分析一下 BTC 該不該買」→ `select_tools()` 回 **62 個工具**（`analysis_full` meta 意圖展開六大群）= 28,442 字元 ≈ **8,888 token**，加 system prompt 約 2,600 token，每輪約 12K input token，`max_steps=8`。而 `bedrock.py` 沒有任何 `cachePoint`。
+實測「分析一下 BTC 該不該買」曾路由出 **62 個工具**（`analysis_full` meta 意圖）。現在 Bedrock 已有真串流，但 `bedrock.py` 仍沒有 `cachePoint`，大型 tool schema 的 token 成本與首 token 延遲仍需監測。
 
 **三層修法（由零成本到高投報）：**
 
 | 修法 | 工時 | 說明 |
 |---|---|---|
 | ① Demo 動線避開 `analysis_full` + `max_steps` 降到 5 | 0.5h | `ollama_agent.py:373`。零成本立即見效 |
-| ② **前端 paced reveal + 後端心跳 + 雙看門狗** | 3h | **這是保底，必須先做。** 規格 §B1 的三條修法一條都不能省 —— 但證據段要從 `backend/agent/llm.py:65` 改成「`agent/llm/bedrock.py` 無 `converse_stream`」 |
-| ③ 在 `bedrock.py` 補 `converse_stream` + `chat_stream` | 4h | `ollama_agent.py:469` 靠 `hasattr` 判斷，**補了主迴圈一行都不用改就自動走串流分支**。投報率最高 |
+| ② **前端狀態 + 後端心跳 + 雙看門狗** | 保留 | 真串流不代表工具呼叫期間不會空檔；這些仍是網路與長任務保底 |
+| ③ `bedrock.py` 的 `converse_stream` + `chat_stream` | ✅ 已完成 | 主迴圈路透過 `hasattr` 自動走串流分支，並有專屬測試 |
 | ④ Bedrock prompt caching | 2h | `tool_router` 刻意依 `ALL_TOOLS` 固定順序輸出以穩定 KV prefix ——前綴穩定、命中率會很高 |
 
-**順序不能反：② 先做，③ 再做。** 因為 ③ 的路徑目前完全沒被驗證過（見 BLOCKER-1），而 ② 在有串流時仍然有用（平滑網路抖動），不是白工。
+串流缺口已解；下一個實際優化點是 prompt caching 與路由候選工具數，不是再做 paced reveal。
 
 ### BLOCKER-3 · CSV 的最終定位（硬約束已被推翻，但不是「完全不用」）
 
@@ -455,7 +457,7 @@ cd agent-core
 /opt/homebrew/bin/python3.13 -m venv .venv
 .venv/bin/pip install -r requirements.txt && .venv/bin/pip install boto3
 .venv/bin/python -m pytest -q | tail -5          # 來源基準：717 passed / 4 failed / 31s
-# ★ Bedrock 端到端首驗（那 163 行從未被自動化驗證過）
+# ✅ Bedrock 端到端驗證（現況已完成，此指令保留供新環境 smoke test）
 LLM_PROVIDER=bedrock BEDROCK_MODEL=<實際可用的 inference profile> \
   .venv/bin/python -c "from agent.llm import get_provider; \
   print(get_provider('claude').chat([{'role':'user','content':'回一個字：好'}]).content)"
@@ -541,7 +543,7 @@ git branch -a      # 期望只有 * main 與 remotes/origin/main
 | `README.md`（根，3.2 KB） | **重寫** | 整份是命題轉貼 + 資料集欄位表 + 評分標準，**沒有一個字在講我們做了什麼**。評審點進 GitHub 第一眼看到的就是它。改成：MAIA 是什麼、AWS 架構圖、目錄導覽（明確說 `frontend-pixel/` 是產品前端、`agent-core/agent_ui/` 是參考實作）、怎麼跑、部署說明。命題與評分表移到 `docs/` 附錄 |
 | `docs/競爭情報與策略.md`（115 行） | **併入後刪除** | **`:16`「必須實際使用主辦提供的企業資料（=這份 CSV）—— 沒用到是最大失分點之一」與 `:23`「必用 CSV」已被主辦方本人推翻**（見 BLOCKER-3）。這是全 repo 最危險的過時敘述。`:15`「限用 AWS 基礎模型」仍成立，連同競品分析併進新的 `docs/競賽約束與資源.md` |
 | `docs/架構與實作計畫.md`（233 行） | **重寫成 v3** | 三處被推翻：① `:15,:78,:84,:89,:140,:192` 反覆寫「**Strands Agents SDK on Bedrock 主線**」→ agent-core **完全沒用 Strands**，是 `ollama_agent.py:369` 的手工 while 迴圈，**寫進簡報就是不實陳述**；② `:49,:205` 工具註冊表列 5 個 `dna_*` + 5 個 `max_*` → 實際 106 個 schema / 108 個 callable；③ `:30` 五 agent supervisor 拓撲 → 實際是 1 個 orchestrator + Critic + Reader 兩個真子 agent。**倖存可用：** `:91-104` Converse 工具調用機制、成本分層、`:115-123` AWS 服務表、`:177-181` Kiro 計畫 |
-| `docs/前端框架規格.md`（1326 行） | **保留 + 打三個補丁** | 品質最高的一份，**§3–§13 與兩個附錄完全不受影響，是本次整合最有價值的既有資產**。三處要改：① `:4` 基準寫「`backend`（純標準庫 + FastAPI）」→ backend 要刪了；② **`:1214`「已 grep 確認 backend 只有註解、零實作」現在不成立** —— agent-core 有真的 `bedrock.py`（163 行 Converse）、實測 `/ping` 回 200 的 AgentCore 入口、兩個 MCP server。這直接翻轉 §13 決策 6 的答案（見 §11 的 D9）；③ **§B1 的證據段**要從 `backend/agent/llm.py:65` 改成「`agent/llm/bedrock.py` 無 `converse_stream`」—— **結論不變，B1 對新後端仍然成立**。<br>另外：§B2（人格是假的）**已被新 agent 解掉**（`personas.py` 是 6 段結構化 XML addendum，且 system prompt 在 `ollama_agent.py:404-421` 是 per-call 組的）；§B3、§B4 維持有效（B4 的接縫 PR 已落地） |
+| `docs/前端框架規格.md` | **已對齊現況** | §B1 已更新為 Bedrock `ConverseStream` 與 `answer_delta` 已完成；B2、B4 已解，B3 部分推翻。§3–§13 與兩個附錄仍是前端有效資產。 |
 | `docs/提案簡報骨架.md`（164 行） | **保留，等 v3 落地後更新** | 骨架沒問題，內容跟著架構 v3 改 |
 
 ### 7.2 來源 repo 五份
@@ -666,7 +668,7 @@ approval: live<ApprovalPlan | null>(null),   // 驅動 §8.3 的核准疊層
 | `tool_result` | 540, 544, 548 | `{name, result}` | 對應 step 的 `ok` 落定 + 觸發圖卡渲染 |
 | `reader` | 553+ | `{name, injection_detected, flags, reader_used}` | **`injection_detected` 為 true 時在 HUD 閃一張「已攔截疑似指令注入」** —— 這是 AI 設計 15% 的免費得分點，目前完全沒有出口 |
 | `approval_request` | 518-525 | `{name, token, plan, hash, summary}` | `hud.approval.set(plan)` → 開核准疊層 + `setInputCaptured(true)` |
-| `answer_delta` | 475 | `{content}` | 累積進 paced reveal 緩衝（**Bedrock 路徑上不會出現**，見 BLOCKER-2） |
+| `answer_delta` | 主迴圈路串流分支 | `{content}` | 累積顯示；Ollama 與 Bedrock `ConverseStream` 路徑都會出現 |
 | `answer_reset` | 501 | `{}` | **必須實作** —— 否則小模型「邊講邊呼叫工具」的前導文字會留在畫面上變成假答案 |
 | `final_answer` | 628, 636 | `{content}` | 收尾 + `[圖表]` 錨點解析 + 五維儀表 + 分級免責 |
 | `error` | 395, 449, 484 | `{content}` | 錯誤訊息帶「重試」，**已串出的字不清掉**（規格 §B1 第 3 條） |
@@ -775,8 +777,8 @@ pro       專業終端     system    max     PR   panel:'pro'
 | W25 | subtree merge + `.dockerignore` + `.gitignore` + 清理兩份 design.md | 2 | 低 | 金鑰安全（**L3 是唯一的真安全事件風險**） |
 | W26 | `logger` 修復 + `/api/models` bedrock 分支 + `.env.example` 補 16 個變數 | 1 | 低 | 完成度 10%（三個廉價失分點） |
 | W27 | CORS（vite proxy + 部署同源） | 0.5 | 低 | **不做則一行 API 都呼叫不到** |
-| W28 | **Bedrock 端到端首驗**（含 ARM64 容器內） | 3 | **高** | 硬約束（那 163 行從未被執行過） |
-| W29 | `bedrock.py` 補 `converse_stream` + `chat_stream` | 4 | 中 | 現場觀感（主迴圈零改動） |
+| W28 ✅ | **Bedrock 端到端驗證 + AgentCore AWS 部署** | 已完成 | — | 實際對話/摘要成功，runtime `maia_agent` 為 `READY` |
+| W29 ✅ | `bedrock.py` 的 `converse_stream` + `chat_stream` | 已完成 | — | 18 項 provider 測試通過 |
 | W30 | SSE 心跳 + paced reveal + 雙看門狗（規格 §B1 三條，證據段更新） | 3 | 低 | **W29 的保底，順序不能反** |
 | W31 | `src/api/agent.ts`（streamChat + 12 事件型別 + `_wrap_result` 的 `_source`） | 3 | 中 | AI 設計 15% |
 | W32 | 刪 backend/frontend + 搶救 4 模組（含係數重校準 + `capital_feasible`） | 6 | 中 | 商業 20% |
@@ -834,7 +836,7 @@ pro       專業終端     system    max     PR   panel:'pro'
 
 **⚠️ 目前的斷網保險其實不成立：** `index.html:16` 的 Chart.js 走 CDN，斷網時 `window.Chart` 是 undefined → `injectChartCard` 在 `new Chart(...)` 拋例外 → 被 catch 吞掉 → **卡片外框有、圖是空白**。移植到 frontend-pixel 時因為改成手刻 SVG，這個問題自然消失。
 
-**現場必須維持 `RISK_MODE=paper`**（`.env.example:63` 已是預設）。
+**原規劃建議現場維持 `RISK_MODE=paper`，但 2026-08-02 最新公開部署實際是 `RISK_MODE=live`、`MAIA_ACCOUNT_OWNERS=*`、`LIVE_UNTIL=2026-08-05`。** 這是刻意的 demo 取捨，不可再將 paper 寫成線上現況。
 
 ---
 
@@ -842,7 +844,7 @@ pro       專業終端     system    max     PR   panel:'pro'
 
 | # | 決策 | 選項 | **推薦** | 一句話理由 |
 |---|---|---|---|---|
-| **D1** | Bedrock 什麼時候做端到端首驗 | (a) 整合第一件事 (b) 最後階段 (c) 相信程式碼 | **(a)，且要在 ARM64 容器內也驗一次** | 那 163 行零測試、venv 沒裝 boto3，是唯一合規的推理路徑卻從未被執行過；本機 3.13 vs 容器 3.12 讓「本機測綠 ≠ 容器測綠」 |
+| **D1 ✅** | Bedrock 端到端與 ARM64 部署 | 已驗證 | **完成** | boto3、18 項 provider 測試、AWS 實跑與 AgentCore runtime `READY` 均已確認 |
 | **D2** | `BEDROCK_MODEL` 用哪個 | (a) 照抄一個較新的 id (b) 用 `aws bedrock list-inference-profiles` 查帳號實際可用的最新 Claude (c) 維持 2024 年預設 | **(b)** | 模型可用性依帳號/region/是否申請 model access 而不同，猜錯就是現場 404；且 model id 上的 2024 年份評審看得到 |
 | **D3** | 主辦 CSV 的定位 | (a) 做完整 adapter 當斷網 fallback (b) **重新定位成「訪客示範帳戶」** (c) 完全不用 | **(b)** | 斷網理由站不住（CSV 只餵一塊面板、`_timing()` 仍要打網路、無手續費欄位會產出「成本 0%」假結論）；但「評審沒 Lv2 帳號也要有東西看」是真的，且同時解掉公網部署洩漏真實帳戶 |
 | **D4** | `backend/maia/` 留還是刪 | (a) 整包刪 (b) **搶救 4 模組約 344 行** (c) 整包留 | **(b)** | analytics 帳務嚴謹度完勝，但 CSV loader / 淨值曲線 / 六軸分數+archetype / 反事實回測**它一樣都沒有**，而那正是像素世界 DNA 面板要渲染的 |
@@ -865,11 +867,11 @@ pro       專業終端     system    max     PR   panel:'pro'
 1. 建 `agent-core/.dockerignore` —— 沒有它，任何一次 `docker build` 都會把真實金鑰烤進 image layer
 2. `from loguru import logger` 補進 `agent_ui/app.py` —— 一行，解掉「評審機器上三個端點 500」
 3. `vite.config.ts` 加 3 行 proxy —— 沒有它一行 API 都呼叫不到
-4. `pip install boto3` + Bedrock 實跑 —— 那是唯一合規的推理路徑，而它從未被執行過
+4. ✅ boto3 + Bedrock 實跑 + AgentCore AWS 部署已完成；新環境仍用 `scripts/bedrock_check.py` 做 smoke test
 
 **三句不能出現在簡報裡的話：**
 - 「我們用 Strands Agents SDK」（repo 裡沒有）
-- 「我們的大腦是本地 Ollama + gemma4」（`FRONTEND_HANDOFF.md:9` 原文，不要搬）
+- 「我們的大腦是本地 Ollama + gemma4」（舊版交接文件用語，現已更正）
 - 「我們反向工程了 CoinGlass 的 AES-128-ECB 加密」（`README.md:14` 原文，那段已是死碼且有 ToS 風險 —— 改講「我們主動移除了對逆向抓取的依賴，改用可持續的免費第一方來源」）
 
 **三個現場最容易炸又最難當場 debug 的：**

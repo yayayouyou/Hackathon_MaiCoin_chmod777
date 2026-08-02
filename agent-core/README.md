@@ -97,6 +97,8 @@ docker buildx build --platform linux/arm64 \
 
 服務合約四項齊備:`/invocations`(SSE)、`/ping`(Healthy / HealthyBusy)、ARM64、`0.0.0.0:8080`。
 
+**2026-08-02 實際狀態**:AWS 上的 AgentCore Runtime `maia_agent`（ID `maia_agent-4dRDgpAt4P`）已是 `READY`。正式路徑使用 Bedrock Claude，`BedrockProvider.chat_stream()` 已以 `ConverseStream` 對主迴圈路輸出 `answer_delta`。`tests/test_bedrock_provider.py` 有 18 項專屬測試且全數通過。
+
 ### 接進 IDE(MCP)
 
 `mcp_server.py` 是 stdio 封裝(42 工具),可掛進 Cursor / Claude Desktop:
@@ -129,18 +131,16 @@ Command: /path/to/agent-core/.venv/bin/python /path/to/agent-core/mcp_server.py
 
 | # | 缺口 | 影響 |
 |---|---|---|
-| 1 | `agent/llm/bedrock.py`(163 行)**零測試覆蓋** | 唯一合規的推理路徑從未被自動化驗證 |
-| 2 | 無 `converse_stream` | Bedrock 路徑不吐 `answer_delta`,前端會沉默數十秒 |
-| 3 | 無 prompt caching(`grep cachePoint` 零命中) | 成本與延遲 |
-| 4 | `tool_embeddings.py` 綁本地 ollama 的 bge-m3,失敗一次後 `_index_failed` 永不重試 | 上雲**靜默**退化成純關鍵字路由 |
-| 5 | 核准 token 是行程內 dict | 多 worker / 多實例會 403 |
-| 6 | 狀態全寫本機檔案(`agent_memory/` `audit_logs/` `conversation_logs/` `run_cards/`) | 容器重啟即失,包含審計鏈 |
-| 7 | `/api/dashboard` `/api/positions` `/api/account_activity` **零認證** | 公開部署 = 公開帳戶 |
-| 8 | 工具結果硬截斷 4000 字元(`ollama_agent.py:296-297`) | 與 prompt 要求「至少 50~100 根 K 線」衝突 |
-| 9 | `.env.example` 缺 16+ 個關鍵變數(含全部 Bedrock 相關) | clone 照做只會跑到 Ollama |
-| 10 | `TOOL_CALLABLES` 有 2 個工具沒有對應 schema(`forget_about_me` / `list_exchanges`) | 模型叫不動它們 |
-| 11 | `skills/market_data/coinglass_scraper.py` 的 AES-ECB 逆向解密已是死碼 | 隨「完整原始碼」繳交有 ToS 與觀感風險,建議刪除 |
-| 12 | `max_private.py` 的 nonce 只用本機時鐘,無伺服器時間校準 | 睡眠喚醒後時鐘漂移 → 私有 API 整組 401,而錯誤訊息不指向時鐘 |
+| 1 | 無 prompt caching(`grep cachePoint` 零命中) | 成本與延遲 |
+| 2 | `tool_embeddings.py` 綁本地 ollama 的 bge-m3,失敗一次後 `_index_failed` 永不重試 | 上雲**靜默**退化成純關鍵字路由 |
+| 3 | 核准 token 是行程內 dict | 多 worker / 多實例會 403 |
+| 4 | 持久化尚未全面 AWS 化：玩家/session、討論區/留言、社群摘要已用 DynamoDB，報告與對話可用 S3；`agent_memory/` 其餘記憶、`audit_logs/` 與 `run_cards/` 仍有本機檔案 | 尚未遷移的資料在容器重啟後可能遺失 |
+| 5 | 部分交易帳戶端點的授權邊界仍需在公開部署前複核 | 若將真實 MAX 帳戶掛在公開網址，可能洩露餘額與損益 |
+| 6 | 工具結果硬截斷 4000 字元(`ollama_agent.py`) | 與 prompt 要求「至少 50~100 根 K 線」衝突 |
+| 7 | `.env.example` 雖已有 Bedrock 與 DynamoDB 變數，但預設仍是 Ollama，且 fallback model ID 仍是 2024 Claude 3.5 | 正式部署必須覆寫 `LLM_PROVIDER` 與 `BEDROCK_MODEL` |
+| 8 | `TOOL_CALLABLES` 與 tool schema 的完整對應仍需定期用測試驗證 | 未對應的工具無法由模型呼叫 |
+| 9 | `skills/market_data/coinglass_scraper.py` 仍保留 AES-ECB 逆向解密舊碼 | 公開繳交有 ToS 與觀感風險 |
+| 10 | `max_private.py` 的 nonce 仍需依賴本機時鐘正確 | 時鐘漂移可能使私有 API 回 401 |
 
 處理優先序見 `../docs/agent-repo-整合計畫.md` §9。
 

@@ -6,7 +6,7 @@
 
 ## 1. 這個專案是什麼
 
-**本地跑的加密貨幣交易 AI 助理**，定位是**對 MAX 交易所（MaiCoin 集團）的功能提案（feature pitch）**。所以技能深度綁定 MAX API。大腦是**本地 Ollama + `gemma4:12b-mlx`**（M4/24GB Mac），透過 function-calling 調用 85 個工具。
+**可本機開發、正式部署到 AWS 的加密貨幣交易 AI 助理**，定位是**對 MAX 交易所（MaiCoin 集團）的功能提案（feature pitch）**。技能深度綁定 MAX API。正式 demo 大腦使用 Amazon Bedrock Claude，並已部署到 Bedrock AgentCore Runtime；Ollama 只作為本機低成本開發 provider。
 
 架構策略：**先把底層交易/分析/回測/風控技能做到 100% 可靠並單元測試 → 再接 LLM 決策大腦 → 前端把結果視覺化**。目前前兩層扎實，**這一輪要把第三層（視覺 + 互動）做好**。
 
@@ -18,7 +18,7 @@
 python agent_ui/app.py          # FastAPI，→ http://127.0.0.1:8000
 ```
 - **`http://127.0.0.1:8000/?demo=charts`** ⭐ 用「示範數據」渲染所有圖表卡，**不必等模型、不必開 Ollama**，是做設計 QA 與 pitch demo 的最快路徑。改 CSS/卡片版型時一直開著它。
-- 需要真跑對話才要開 Ollama（`ollama serve` + 已有 `gemma4:12b-mlx`）。
+- 正式 demo 請設 `LLM_PROVIDER=bedrock`、可用的 `BEDROCK_MODEL` 與 AWS 憑證/IAM role；只有選擇 `LLM_PROVIDER=ollama` 進行本機開發時，才需啟動 `ollama serve`。
 - `RISK_MODE` 預設 `paper`（模擬盤，不送真單）；前端據此顯示風險徽章。
 
 ---

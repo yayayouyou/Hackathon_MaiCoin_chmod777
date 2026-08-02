@@ -131,7 +131,7 @@ def _parse_timestamp(raw: Any) -> datetime | None:
 
 
 def posts_for_day(room_id: str, day: str) -> list[dict[str, Any]]:
-    """Repository boundary that the DynamoDB integration can replace later."""
+    """Read one room/day through the configured DynamoDB-or-JSON repository."""
     start, end = _utc_window(day)
     result = []
     for post in list_posts(room_id):
