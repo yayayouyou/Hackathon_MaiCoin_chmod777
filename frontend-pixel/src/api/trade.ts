@@ -223,6 +223,22 @@ export async function getOpenOrders(market = '', signal?: AbortSignal): Promise<
   return body.orders ?? [];
 }
 
+/**
+ * 撤銷單筆掛單。走 session 授權（同 getOpenOrders），不需核准密鑰 ——
+ * 單筆撤單只是移除未成交委託，不動資金。
+ */
+export async function cancelOrder(orderId: number | string): Promise<{ ok: boolean; detail: string }> {
+  if (FLAGS.fast) return { ok: true, detail: '（離線示範）已撤單' };
+  const res = await fetch('/api/cancel_order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order_id: Number(orderId) }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { ok?: boolean; detail?: string; error?: string };
+  if (!res.ok || !body.ok) return { ok: false, detail: body.detail ?? body.error ?? `後端回應 ${res.status}` };
+  return { ok: true, detail: '已撤單' };
+}
+
 export type OrdType = 'limit' | 'market' | 'post_only';
 
 export async function previewOrder(

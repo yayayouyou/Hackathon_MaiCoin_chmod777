@@ -1,4 +1,5 @@
-import { getOpenOrders, type OpenOrder } from '../../api/trade';
+import { useState } from 'react';
+import { getOpenOrders, cancelOrder, type OpenOrder } from '../../api/trade';
 import { useAsync } from '../useAsync';
 import { AsyncState } from '../Panel';
 
@@ -9,8 +10,8 @@ import { AsyncState } from '../Panel';
  * （別人的量），這一格畫的是**你自己**送出去、正停在 `wait` 等成交的單。
  * 下單（post_only／限價）確認後，右欄會自動跳到這裡，那筆單就出現在清單上。
  *
- * 唯讀。撤單要另外做（後端 `/api/orders` 只讀不寫），這裡不放任何會改動帳戶
- * 的按鈕 —— 一格「看得到掛單」的視圖不該偷偷帶著能動錢的能力。
+ * 可撤單：每一列有撤單鈕，但按下去先變「確定？」再問一次 —— 撤單雖是安全操作
+ * （只移除未成交委託、不動資金），誤觸還是會把想留的單撤掉，值得二次確認。
  */
 
 function fmtPrice(n: number | null): string {
@@ -29,11 +30,28 @@ function fmtTime(ms?: number | null): string {
 
 const ORD_LABEL: Record<string, string> = { limit: '限價', market: '市價', post_only: '只掛單' };
 
-function Row({ o }: { o: OpenOrder }) {
+function Row({ o, onDone }: { o: OpenOrder; onDone: () => void }) {
   const buy = o.side === 'buy';
   const col = buy ? 'var(--green)' : 'var(--rose)';
   // 成交進度：剩多少沒吃到。只掛單剛送出時是 0%，被吃一部分就往上跑。
   const filled = o.volume > 0 ? (o.executed_volume / o.volume) * 100 : 0;
+
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const doCancel = async () => {
+    setBusy(true);
+    setErr(null);
+    const r = await cancelOrder(o.id);
+    setBusy(false);
+    if (r.ok) onDone();               // 撤成功 → 重抓清單，這一列就消失
+    else {
+      setErr(r.detail);
+      setConfirming(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -71,6 +89,44 @@ function Row({ o }: { o: OpenOrder }) {
           已成交 {filled.toFixed(1)}%
         </div>
       )}
+
+      {/* 撤單：一鍵先變「確定？」，再按才真的撤 */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 6 }}>
+        {!confirming ? (
+          <button
+            className="btn"
+            style={{ fontSize: 10, padding: '2px 8px' }}
+            onClick={() => setConfirming(true)}
+          >
+            撤單
+          </button>
+        ) : (
+          <>
+            <span className="muted" style={{ fontSize: 10, alignSelf: 'center' }}>確定撤掉？</span>
+            <button
+              className="btn"
+              style={{ fontSize: 10, padding: '2px 8px', color: 'var(--rose)', borderColor: 'var(--rose)' }}
+              disabled={busy}
+              onClick={() => void doCancel()}
+            >
+              {busy ? '撤單中…' : '確定撤單'}
+            </button>
+            <button
+              className="btn"
+              style={{ fontSize: 10, padding: '2px 8px' }}
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
+              不撤
+            </button>
+          </>
+        )}
+      </div>
+      {err && (
+        <div className="toast" data-err="true" style={{ marginTop: 6 }}>
+          {err}
+        </div>
+      )}
     </div>
   );
 }
@@ -94,7 +150,7 @@ export function OpenOrders({ market }: { market: string }) {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         {orders.map((o) => (
-          <Row key={String(o.id)} o={o} />
+          <Row key={String(o.id)} o={o} onDone={reload} />
         ))}
       </div>
       <p className="muted" style={{ fontSize: 10, marginTop: 4 }}>

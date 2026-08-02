@@ -1473,6 +1473,26 @@ def get_open_orders(market: str = "", limit: int = 50):
         return {"orders": [], "error": str(e)[:120]}
 
 
+class CancelOrderRequest(BaseModel):
+    order_id: int
+
+
+@app.post("/api/cancel_order", dependencies=[Depends(auth.require_session)])
+def cancel_open_order(req: CancelOrderRequest):
+    """
+    撤銷單筆掛單，給交易面板「我的掛單」的撤單鈕用。
+
+    單筆撤單是**安全操作** —— 只是把一張還沒成交的委託拿掉，不會動用資金、
+    也無法拿來清空帳戶（那是「無 market 全帳戶撤單」才需人工核准的情境）。
+    因此比照系統既有分類直接執行，不走「提議→凍結→核准」互鎖。
+    """
+    from skills.execution.order_executor import cancel_order
+    res = cancel_order("max", req.order_id)
+    if res.get("status") == "SUCCESS":
+        return {"ok": True, "canceled": res.get("canceled_order")}
+    raise HTTPException(status_code=422, detail=res.get("reason") or "撤單失敗")
+
+
 # ── 策略機器人（Paper 模擬盤 MVP）────────────────────────────
 # MVP 刻意全域、免登入：bots 全程 paper（模擬盤、不下真單），沒有真錢風險，
 # 也不觸「一律人工確認」那道實盤安全牆。per-user 歸屬與 live 授權留待後續。
