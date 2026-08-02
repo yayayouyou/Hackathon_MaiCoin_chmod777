@@ -1,0 +1,40 @@
+# BuildKit 會優先採用 `<dockerfile 路徑>.dockerignore`，所以這一份只作用於
+# Dockerfile.api，根目錄那份 .dockerignore 仍然完整保留給 Dockerfile.agentcore。
+# 兩份唯一的差別：那份把 agent_ui/ 排除（AgentCore 入口用不到），這份必須留著它。
+
+# ── 金鑰。絕對不可進 image ──
+.env
+*.env
+!.env.example
+*.pem
+*.key
+*credentials*
+
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 本機狀態不進 image（容器內由 Dockerfile 重新 mkdir）
+audit_logs/
+agent_memory/
+conversation_logs/
+run_cards/
+routing_log.jsonl
+order_ledger.jsonl
+strategies.json
+etf_flows_store.json
+
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+tests/
+docs/
+*.md
+!README.md
