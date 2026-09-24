@@ -514,7 +514,7 @@ def _agg_trades(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-@app.get("/api/dashboard", dependencies=[Depends(auth.require_session)])
+@app.get("/api/dashboard", dependencies=[Depends(auth.require_session_or_local)])
 def get_dashboard():
     """使用者總覽儀表板：帳戶狀態 + 餘額 + 近期交易統計 + 記憶特質（缺 MAX 金鑰時優雅降級）。"""
     out: Dict[str, Any] = {
@@ -664,7 +664,7 @@ def _mask_addr(a):
 _POS_LOCK = __import__("threading").Lock()
 
 
-@app.get("/api/positions", dependencies=[Depends(auth.require_session)])
+@app.get("/api/positions", dependencies=[Depends(auth.require_session_or_local)])
 def positions(sync: int = 0, method: str = "fifo", reward_basis: str = "market"):
     """艙位成本 + 未實現/已實現損益 + 對帳狀態（唯讀、lazy 載入）。
 
@@ -745,7 +745,7 @@ def trading_guard(limit: int = 20):
         return {"error": str(e)}
 
 
-@app.get("/api/account_activity", dependencies=[Depends(auth.require_session)])
+@app.get("/api/account_activity", dependencies=[Depends(auth.require_session_or_local)])
 def account_activity():
     """個人帳戶資金動態（唯讀、lazy 載入，不拖慢主儀表板）：入金/出金/互轉合併時間軸 +
     閃兌記錄 + 提幣白名單（地址一律遮蔽中段）。缺金鑰或失敗時回 ok=False 讓前端優雅隱藏。"""
@@ -898,7 +898,8 @@ def get_klines(market: str = "btctwd", timeframe: str = "1h", limit: int = 300):
 
 # 一併關進登入牆：公開網址上的無認證 LLM 端點是實際的帳單風險（每一輪最多 8 步、
 # 每步都是一次 Bedrock 呼叫）。代價是評審要先註冊，約 10 秒。
-@app.post("/api/chat", dependencies=[Depends(auth.require_session)])
+# 本機 demo 可在 .env 開 MAIA_LOCAL_NO_LOGIN=1 放行本機請求（條件見 auth.local_no_login）。
+@app.post("/api/chat", dependencies=[Depends(auth.require_session_or_local)])
 async def chat_endpoint(req: ChatRequest):
     """
     聊天與決策推理端點。使用 Server-Sent Events (SSE) 實時串流大腦的思考與 Tool 執行日誌。
@@ -1446,7 +1447,7 @@ def reject_order(req: OrderApprovalRequest, _: None = Depends(_require_approval_
     return ta.reject(req.token)
 
 
-@app.get("/api/orders", dependencies=[Depends(auth.require_session)])
+@app.get("/api/orders", dependencies=[Depends(auth.require_session_or_local)])
 def get_open_orders(market: str = "", limit: int = 50):
     """
     目前「掛單中」（未成交）的真實訂單清單，給交易面板的「我的掛單」用。**唯讀**。
@@ -1489,7 +1490,7 @@ class CancelOrderRequest(BaseModel):
     order_id: int
 
 
-@app.post("/api/cancel_order", dependencies=[Depends(auth.require_session)])
+@app.post("/api/cancel_order", dependencies=[Depends(auth.require_session_or_local)])
 def cancel_open_order(req: CancelOrderRequest):
     """
     撤銷單筆掛單，給交易面板「我的掛單」的撤單鈕用。

@@ -9,6 +9,7 @@ MAX 金鑰依舊只活在後端的環境變數／Secrets Manager 裡。
 """
 
 import hashlib
+import os
 import re
 import secrets
 from typing import Any, Dict, Optional, Tuple
@@ -94,6 +95,40 @@ def require_session(request: Request) -> str:
     if not session:
         raise HTTPException(status_code=401, detail="登入已過期，請重新登入。")
     return str(session["username"])
+
+
+# ─────────────── 本機免登入（opt-in，只給自己這台機器 demo 用）───────────────
+LOCAL_USERNAME = "local"
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1"}
+# 部署在 CloudFront → ALB 後面時 ALB 一定會補 X-Forwarded-For；而 Dockerfile.api 用
+# `--forwarded-allow-ips *`，此時 request.client 取的是 XFF **最左邊**那個 —— 客戶端自己
+# 填得了 127.0.0.1。所以「IP 是本機」不能單獨當依據：只要帶任何轉發標頭就不算本機。
+_FORWARD_HEADERS = ("x-forwarded-for", "forwarded", "x-real-ip")
+
+
+def local_no_login(request: Request) -> bool:
+    """這個請求能不能免登入：`.env` 明確開 MAIA_LOCAL_NO_LOGIN，且是直接從本機連進來的。
+
+    預設關閉 —— 登入牆擋的是 LLM 帳單與真實帳戶（餘額、成交、撤單），公開網址上不能拆。
+    """
+    if os.getenv("MAIA_LOCAL_NO_LOGIN", "").strip().lower() not in ("1", "true", "yes"):
+        return False
+    host = request.client.host if request.client else ""
+    if host not in _LOOPBACK_HOSTS:
+        return False
+    return not any(h in request.headers for h in _FORWARD_HEADERS)
+
+
+def require_session_or_local(request: Request) -> str:
+    """帳戶、對話、掛單端點用的登入牆；本機免登入模式下放行本機請求。
+
+    本機放行時回傳 LOCAL_USERNAME，而且先判斷本機、不去查 session ——
+    這幾條端點只要「能不能用」、不用知道是誰，DynamoDB 沒開也照樣能 demo。
+    身分相關的端點（/api/auth/me、進度、發文、官方操作）仍然走 require_session。
+    """
+    if local_no_login(request):
+        return LOCAL_USERNAME
+    return require_session(request)
 
 
 def role_of(player: Dict[str, Any]) -> str:

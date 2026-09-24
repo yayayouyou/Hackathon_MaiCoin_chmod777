@@ -2901,7 +2901,10 @@ async function sendMessage() {
     });
     if (!response.ok || !response.body) {
       stopThinking();
-      contEl.textContent = `後端回應錯誤 (HTTP ${response.status})，請檢查設定。`;
+      // /api/chat 在登入牆後面，而這頁沒有登入畫面 —— 401 要講清楚是「沒登入」，不是設定壞了
+      contEl.textContent = response.status === 401
+        ? `尚未登入（HTTP 401）。這個對話頁沒有登入畫面：請先到像素世界（frontend-pixel 的 npm run dev 網址）註冊或登入，網址的主機名稱要跟本頁一樣（都用 ${location.hostname}），再重新整理本頁。本機 demo 也可以在 agent-core/.env 設 MAIA_LOCAL_NO_LOGIN=1 並重啟後端，就不用登入。`
+        : `後端回應錯誤 (HTTP ${response.status})，請檢查設定。`;
       bubble.classList.add("error");
       logTerm("error", `[錯誤] HTTP ${response.status}`);
       return;

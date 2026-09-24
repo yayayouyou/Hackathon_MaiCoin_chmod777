@@ -264,3 +264,75 @@ def test_require_official_accepts_official(client, monkeypatch):
         cookies = {auth.COOKIE_NAME: list(client.cookies.values())[0]}
 
     assert auth.require_official(_Req()) == "alice"
+
+
+# ─────────────────── 本機免登入（MAIA_LOCAL_NO_LOGIN） ───────────────────
+
+def _req(host, headers=None):
+    from starlette.requests import Request
+    raw = [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()]
+    return Request({"type": "http", "headers": raw, "client": (host, 50000)})
+
+
+@pytest.fixture
+def no_login(monkeypatch):
+    monkeypatch.setenv("MAIA_LOCAL_NO_LOGIN", "1")
+
+
+def test_local_no_login_is_off_by_default(monkeypatch):
+    """沒明確打開就跟以前一樣要登入。app import 時會載入 .env，所以這裡主動清掉再驗。"""
+    monkeypatch.delenv("MAIA_LOCAL_NO_LOGIN", raising=False)
+    assert not auth.local_no_login(_req("127.0.0.1"))
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
+def test_local_no_login_allows_loopback_without_touching_store(no_login, monkeypatch, host):
+    """放行時不查 session —— DynamoDB 沒開也要能 demo。"""
+    def boom(_token):
+        raise AssertionError("本機放行不該查 session")
+    monkeypatch.setattr(store, "get_session", boom)
+    assert auth.require_session_or_local(_req(host)) == auth.LOCAL_USERNAME
+
+
+def test_local_no_login_rejects_remote_client(no_login):
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as e:
+        auth.require_session_or_local(_req("203.0.113.7"))
+    assert e.value.status_code == 401
+
+
+@pytest.mark.parametrize("header", ["X-Forwarded-For", "Forwarded", "X-Real-IP"])
+def test_local_no_login_rejects_forwarded_requests(no_login, header):
+    """部署時 uvicorn 跑 --forwarded-allow-ips *，request.client 取的是 XFF 最左邊 ——
+    客戶端自己填得了 127.0.0.1。帶任何轉發標頭就不算本機，偽造也沒用。"""
+    assert not auth.local_no_login(_req("127.0.0.1", {header: "127.0.0.1"}))
+
+
+@pytest.fixture
+def local_client(no_login):
+    # 不用 `with`：不跑 startup（策略機器人 runner、Telegram polling）
+    return TestClient(app, client=("127.0.0.1", 50000))
+
+
+def test_local_no_login_opens_chat(local_client):
+    """body 故意缺 model：過了登入牆才輪到 body 驗證 → 422 而不是 401，也不會真的呼叫 LLM。"""
+    assert local_client.post("/api/chat", json={"messages": []}).status_code == 422
+
+
+def test_local_no_login_keeps_identity_endpoints_strict(local_client):
+    """免登入只開「能不能用」的端點；身分相關的（我是誰、進度、發文、官方操作）仍要真的登入。"""
+    assert local_client.get("/api/auth/me").status_code == 401
+
+
+def test_local_no_login_opens_exactly_the_expected_routes():
+    """逐條打會打到 MAX 真實 API，改檢查接線：放行的就是這六條，不多不少。"""
+    opened = {
+        (m, r.path)
+        for r in app.routes if hasattr(r, "dependant")
+        for m in r.methods
+        if auth.require_session_or_local in {d.call for d in r.dependant.dependencies}
+    }
+    assert opened == {
+        ("GET", "/api/dashboard"), ("GET", "/api/positions"), ("GET", "/api/account_activity"),
+        ("POST", "/api/chat"), ("GET", "/api/orders"), ("POST", "/api/cancel_order"),
+    }
