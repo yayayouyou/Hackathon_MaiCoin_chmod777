@@ -2,6 +2,31 @@
 
 > 2026 雲湧智生：臺灣生成式 AI 應用黑客松 · MaiCoin 命題「打造現代 AI 投資工具」
 
+🏆 **Excellence Award（優選）** — the only winning team in the MaiCoin track · Team **chmod 777**: [@yayayouyou](https://github.com/yayayouyou), [@Eason20050201](https://github.com/Eason20050201), [@manfeilong](https://github.com/manfeilong)
+
+<p align="center">
+  <img src="docs/images/maia-world.png" width="100%" alt="MAIA's walkable pixel-art world: rooms for strategy bots, discussion, the MAIA assistant, announcements, events, my vault, trading personality and P&L reconciliation">
+</p>
+
+<p align="center"><a href="https://www.youtube.com/watch?v=C9Uxo1eGemE"><b>▶ Watch the demo video</b></a></p>
+
+### English summary
+
+**MAIA** is an AI investing assistant for the MAX exchange, built for the 2026 Taiwan Generative AI Application Hackathon. Instead of a dashboard, it is a walkable pixel-art world: each room stands for a kind of question and a data source — your trading DNA, live MAX market data, a risk room with an emergency-stop lever, and a counterfactual room. An assistant agent lives in the world and answers in natural language.
+
+- **ReAct agent with 100+ tools** — a hand-written loop (at most 8 steps) with three-stage tool retrieval (keywords → embeddings → adaptive cut-off), a Reader that sanitizes tool output and a Critic that reviews answers.
+- **The model can only propose trades** — each order plan is frozen with a SHA-256 hash and a 120-second TTL, re-verified after the user confirms in the world, and checked again by four live-trading guards: kill switch, authorization expiry, 24-hour exposure cap and a decision ledger.
+- **Careful accounting** — FIFO and moving-average lot matching with cost provenance, plus reconciliation against exchange balances with a confidence level.
+- **Deployed on AWS** — Amazon Bedrock AgentCore Runtime, ECS Fargate, CloudFront and DynamoDB; the frontend has no runtime dependencies beyond React.
+
+<p align="center">
+  <img src="docs/images/maia-architecture.png" width="100%" alt="Architecture: a free-text query goes through the agent harness (tool routing, persona and memory, reader and critic, provenance) to an LLM on Bedrock AgentCore, which gathers evidence from MAX, CCXT, CoinGlass, FRED and Threads, and routes risky actions through proposal, SHA-256 freeze, user approval and the MAX order">
+</p>
+
+The full write-up below is in Traditional Chinese.
+
+---
+
 傳統投資工具停在「單向的數據圖表」。命題原文說得很直接:**鼓勵參賽者跳脫傳統靜態網頁的框架**。
 
 所以 MAIA 不是一個 Dashboard。它是一個**可以走進去的地方** —— 一個像素風的 2D 世界,你走到哪個區域,就等於在問哪一類問題、用哪一個資料源。世界裡有一位助理 agent:你問它任何事,它會自己決定要查什麼工具、把查到的東西拼起來回答你,需要下單時它**只能提議,不能執行** —— 得你走到交割櫃檯按下確認才算數。
