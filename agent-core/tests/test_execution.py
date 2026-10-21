@@ -54,18 +54,31 @@ class TestRiskGuard:
         assert passed is False
         assert "超過上限" in reason
 
-    def test_validate_order_price_deviation_too_high(self):
-        # 委託買入價 2,100,000 TWD，但市場價 2,000,000 TWD (偏離 5%，超過 3%)
+    def test_validate_order_sell_price_deviation_too_high(self):
+        # 委託賣出價 1,900,000 TWD，但市場價 2,000,000 TWD (偏離 5%，超過 3%)
         passed, reason = validate_order(
             market="BTC/TWD",
-            side="buy",
+            side="sell",
             volume=0.01,
-            price=2100000.0,
+            price=1900000.0,
             ord_type="limit",
             latest_ticker_price=2000000.0
         )
         assert passed is False
         assert "偏離度" in reason
+
+    @pytest.mark.parametrize("price", [1900000.0, 2100000.0])
+    def test_validate_order_buy_price_deviation_allowed(self, price):
+        # 買單掛低價（等回檔）或掛高價（願意追價）都不擋偏離度
+        passed, reason = validate_order(
+            market="BTC/TWD",
+            side="buy",
+            volume=0.01,
+            price=price,
+            ord_type="limit",
+            latest_ticker_price=2000000.0
+        )
+        assert passed is True, reason
 
     def test_validate_order_exotic_quote_fail_closed(self):
         # H2: ethbtc（BTC 計價）以前被當 USD、上限失效約 5 個量級；現無安全匯率 → 直接拒
@@ -191,6 +204,42 @@ class TestOrderExecutorMock:
         assert "超過上限" in res["reason"]
         # 保證底層下單函數「絕對沒有」被調用！
         mock_create_raw.assert_not_called()
+
+    BTC_RULES = {"min_base_amount": 0.0001, "min_quote_amount": 250.0,
+                 "base_unit": "btc", "quote_unit": "twd", "base_precision": 8}
+
+    @patch("skills.execution.order_executor.get_max_market_rules", return_value=BTC_RULES)
+    @patch("skills.execution.order_executor.get_max_tickers")
+    @patch("skills.execution.order_executor._create_max_order_raw")
+    def test_create_order_below_exchange_minimum(self, mock_create_raw, mock_tickers, _rules, monkeypatch):
+        # 100 TWD 的 BTC 低於 MAX 門檻（0.0001 BTC 且 ≥ 250 TWD）→ 先擋下並算出最少要下多少
+        monkeypatch.setenv("RISK_MODE", "live")
+        mock_tickers.return_value = dict(REAL_MAX_TICKER)
+        res = create_order(exchange_id="max", market="BTC/TWD", side="buy",
+                           volume=0.0000365, price=2000000.0, ord_type="limit")
+        assert res["status"] == "REJECTED_BELOW_EXCHANGE_MINIMUM"
+        assert res["details"]["min_volume"] == pytest.approx(0.000125)   # 250 TWD / 2,000,000 > 0.0001
+        assert res["details"]["min_notional"] == pytest.approx(250.0)
+        mock_create_raw.assert_not_called()
+
+    @patch("skills.execution.order_executor.get_max_market_rules", return_value=BTC_RULES)
+    @patch("skills.execution.order_executor.get_max_tickers")
+    def test_create_order_at_exchange_minimum_passes(self, mock_tickers, _rules, monkeypatch):
+        monkeypatch.setenv("RISK_MODE", "paper")
+        mock_tickers.return_value = dict(REAL_MAX_TICKER)
+        res = create_order(exchange_id="max", market="BTC/TWD", side="buy",
+                           volume=0.000125, price=2000000.0, ord_type="limit")
+        assert res["status"] == "SUCCESS"
+
+    @patch("skills.execution.order_executor.get_max_market_rules", side_effect=RuntimeError("MAX down"))
+    @patch("skills.execution.order_executor.get_max_tickers")
+    def test_create_order_minimum_check_skipped_when_rules_unavailable(self, mock_tickers, _rules, monkeypatch):
+        # 規格查不到不擋：交易所才是最終把關
+        monkeypatch.setenv("RISK_MODE", "paper")
+        mock_tickers.return_value = dict(REAL_MAX_TICKER)
+        res = create_order(exchange_id="max", market="BTC/TWD", side="buy",
+                           volume=0.0000365, price=2000000.0, ord_type="limit")
+        assert res["status"] == "SUCCESS"
 
     @patch("skills.execution.order_executor.get_max_tickers")
     def test_create_order_handles_ticker_error(self, mock_tickers, monkeypatch):

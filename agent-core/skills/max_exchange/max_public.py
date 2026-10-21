@@ -62,9 +62,33 @@ def get_max_markets() -> List[Dict[str, Any]]:
             "quote_unit": m.get("quote_unit"),
             "base_precision": m.get("base_unit_precision"),
             "quote_precision": m.get("quote_unit_precision"),
-            "min_base_amount": m.get("min_base_amount")
+            "min_base_amount": m.get("min_base_amount"),
+            "min_quote_amount": m.get("min_quote_amount")
         })
     return markets
+
+# 交易對規格（最低下單量）幾乎不變，快取 1 小時；下單前檢查用，不必每筆單都打 API
+_MARKET_RULES_CACHE: Dict[str, Any] = {"ts": 0.0, "data": None}
+_MARKET_RULES_TTL = 3600
+
+
+def get_max_market_rules(market: str) -> Optional[Dict[str, Any]]:
+    """回傳單一交易對的下單規格 {min_base_amount, min_quote_amount, base_unit, quote_unit, base_precision}；查無此對回 None。"""
+    now = time.time()
+    if not _MARKET_RULES_CACHE["data"] or now - _MARKET_RULES_CACHE["ts"] > _MARKET_RULES_TTL:
+        raw = _max_public_request("/api/v3/markets")
+        _MARKET_RULES_CACHE["data"] = {
+            str(m.get("id")): {
+                "min_base_amount": m.get("min_base_amount"),
+                "min_quote_amount": m.get("min_quote_amount"),
+                "base_unit": m.get("base_unit"),
+                "quote_unit": m.get("quote_unit"),
+                "base_precision": m.get("base_unit_precision"),
+            }
+            for m in (raw if isinstance(raw, list) else []) if m.get("id")
+        }
+        _MARKET_RULES_CACHE["ts"] = now
+    return _MARKET_RULES_CACHE["data"].get(_normalize_market_id(market))
 
 # 幣種 metadata 幾乎不變（新增幣/調整提幣費才變），快取 1 小時避免每次載入儀表板都打 API
 _CURRENCIES_CACHE: Dict[str, Any] = {"ts": 0.0, "data": None}

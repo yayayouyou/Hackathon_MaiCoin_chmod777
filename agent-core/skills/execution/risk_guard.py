@@ -7,7 +7,9 @@ skills/execution/risk_guard.py
 硬編碼規則：
   1. 單筆最大下單金額限制：法幣交易對最大 50,000 TWD；美元/穩定幣交易對最大 1,500 USDT/USD。
   2. 槓桿限制：不開放槓桿交易，僅限現貨實盤交易 (Leverage = 1x)。
-  3. 滑點限制：限價單價格與當前市場 ticker 最新價格偏離度不得超過 3%。
+  3. 滑點限制：限價『賣』單價格與當前市場 ticker 最新價格偏離度不得超過 3%。
+     限價買單不檢查（使用者 2026-10-21 決定）：掛低價只會在簿上等，掛高價在訂單簿
+     交易所會以賣一起往上成交、不會照委託價付；金額仍受第 1 條單筆上限約束。
 """
 
 import math
@@ -85,8 +87,8 @@ def validate_order(
         logger.warning(err_msg)
         return False, err_msg
             
-    # 2. 偏離度 (滑點) 校驗 (僅針對有委託價的限價型單：limit / post_only)
-    if is_limit_like(ord_type_lower):
+    # 2. 偏離度 (滑點) 校驗 (僅針對有委託價的限價型賣單：limit / post_only；買單不擋，見檔頭)
+    if is_limit_like(ord_type_lower) and side_upper == "SELL":
         price_deviation = abs(price - latest_ticker_price) / latest_ticker_price
         if price_deviation > MAX_SLIPPAGE_TOLERANCE:
             err_msg = f"風控攔截：委託價格 {price} 與市場最新價 {latest_ticker_price} 偏離度達 {price_deviation*100:.2f}%，已超過最大容忍偏離值 {MAX_SLIPPAGE_TOLERANCE*100:.1f}%！"

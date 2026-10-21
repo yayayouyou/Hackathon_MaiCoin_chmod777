@@ -9,6 +9,7 @@ skills/execution/order_executor.py
   - cancel_all_orders  : 撤銷所有活動訂單
 """
 
+import math
 import os
 import time
 import uuid
@@ -20,7 +21,7 @@ from dotenv import load_dotenv
 
 from skills.execution.risk_guard import validate_order, is_limit_like
 from skills.execution import live_guard
-from skills.max_exchange.max_public import get_max_tickers
+from skills.max_exchange.max_public import get_max_tickers, get_max_market_rules
 from skills.max_exchange.max_private import (
     _create_max_order_raw,
     _cancel_max_order_raw,
@@ -115,6 +116,47 @@ def prepare_and_validate_order(
                 }
             }
         }
+
+    # 3. 交易所最低下單量（MAX 逐交易對規定 min_base_amount 與 min_quote_amount）。
+    #    低於門檻送出去也只會被 MAX 退件；先擋下並算出「最少要下多少」，模型才不會自己亂猜門檻。
+    #    規格查不到（網路/新幣）就不擋 —— 這只是提早告知，真正的把關在交易所。
+    try:
+        rules = get_max_market_rules(market)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"查詢 {market} 最低下單量失敗，略過此檢查: {e}")
+        rules = None
+    if rules:
+        min_base = _to_float(rules.get("min_base_amount"))
+        min_quote = _to_float(rules.get("min_quote_amount"))
+        notional = volume * price_to_validate
+        if volume < min_base or notional < min_quote:
+            precision = int(rules.get("base_precision") or 8)
+            step = 10 ** -precision
+            min_volume = max(min_base, min_quote / price_to_validate)
+            min_volume = math.ceil(min_volume / step - 1e-9) * step
+            base_u = str(rules.get("base_unit") or "").upper()
+            quote_u = str(rules.get("quote_unit") or "").upper()
+            reason = (f"低於 MAX 最低下單量：{market} 每筆至少 {min_base:g} {base_u} 且金額至少 "
+                      f"{min_quote:g} {quote_u}。這筆是 {volume:g} {base_u} ≈ {notional:,.1f} {quote_u}；"
+                      f"以委託價 {price_to_validate:,.1f} 計，最少要下 {min_volume:.{precision}f} {base_u}"
+                      f"（≈ {min_volume * price_to_validate:,.0f} {quote_u}）。")
+            logger.warning(reason)
+            return {
+                "ok": False,
+                "response": {
+                    "status": "REJECTED_BELOW_EXCHANGE_MINIMUM",
+                    "reason": reason,
+                    "details": {
+                        "market": market,
+                        "side": side,
+                        "volume": volume,
+                        "price": price,
+                        "min_volume": round(min_volume, precision),
+                        "min_notional": round(min_volume * price_to_validate, 2),
+                        "latest_market_price": latest_price
+                    }
+                }
+            }
 
     return {"ok": True, "latest_price": latest_price}
 
