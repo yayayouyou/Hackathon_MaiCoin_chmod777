@@ -31,6 +31,15 @@ _cache: Dict[str, Any] = {}
 _cache_lock = threading.Lock()
 
 
+def _is_placeholder_key(key: str) -> bool:
+    """偵測 .env 內仍為範本佔位符（如 your_xxx_here）而非真實金鑰的情況。"""
+    k = (key or "").strip().lower()
+    if not k:
+        return True
+    return (k.startswith("your") or k.startswith("<") or
+            k in ("changeme", "placeholder", "xxx", "api_key", "todo", "none"))
+
+
 def _coingecko_request(endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
     """執行 CoinGecko API GET（帶 TTL 快取 + API Key + 共用韌性層自動重試/限流）。"""
     cache_key = f"{endpoint}?{sorted((params or {}).items())}"
@@ -43,8 +52,9 @@ def _coingecko_request(endpoint: str, params: Optional[Dict[str, Any]] = None) -
 
     api_key = os.getenv("COINGECKO_API_KEY", "")
     headers = {"accept": "application/json"}
-    if api_key:
-        headers["x-cg-demo-api-key"] = api_key  # Demo key 走 header
+    # 佔位符也送出的話，/global、/market_chart 會回 401；沒金鑰就走免費公開層
+    if not _is_placeholder_key(api_key):
+        headers["x-cg-demo-api-key"] = api_key.strip()  # Demo key 走 header
     actual_params = params.copy() if params else {}
 
     url = f"{COINGECKO_BASE_URL}{endpoint}"
