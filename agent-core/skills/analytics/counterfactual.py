@@ -193,7 +193,7 @@ def run_sell_vs_hold(snap: Dict[str, Any],
 
 
 # ── 對外入口（LLM Tool）────────────────────────────────────────────
-def compare_sell_vs_hold(source: str = "demo", path: str = "",
+def compare_sell_vs_hold(source: str = "", path: str = "",
                          fee_rate: float = DEFAULT_FEE_RATE) -> Dict[str, Any]:
     """【LLM Tool】反事實比較：使用者的實際買賣 vs「買了就抱」誰的淨值高。
 
@@ -201,8 +201,8 @@ def compare_sell_vs_hold(source: str = "demo", path: str = "",
     （capital_feasible=false 時金額只能當方法學示意，必須連同 caveat 一起講）。
 
     Args:
-        source: 'demo'＝訪客示範帳戶 CSV 種子（預設）；'ledger'＝MAX 真實帳本
-        path: source='demo' 時的 CSV 路徑，留空用預設示範帳戶
+        source: 'ledger'＝MAX 真實帳本（預設）；'demo'＝訪客示範帳戶 CSV 種子
+        path: 示範帳戶 CSV 路徑；給了 path 且沒指定 source 時就讀這份 CSV
         fee_rate: 手續費率，預設 0.0016（MAX taker 0.16%）
     """
     got = load_events_for_analysis(source=source, path=path)

@@ -189,13 +189,16 @@ def load_demo_account_ledger(path: str = "", include_events: bool = False,
     return out
 
 
-def load_events_for_analysis(source: str = "demo", path: str = "") -> Dict[str, Any]:
-    """下游模組共用的取數入口：demo＝CSV 種子；ledger＝MAX 真實帳本事件。
+def load_events_for_analysis(source: str = "", path: str = "") -> Dict[str, Any]:
+    """下游模組共用的取數入口：ledger＝MAX 真實帳本事件（預設）；demo＝CSV 種子。
 
+    source 留空時：有給 path 就讀那份 CSV，否則走 ledger（主辦 CSV 已移出 repo，
+    見 6ae0d9d）。
     回傳 {"events": [...], "source": ..., "price_lookup": callable|None}。
     ledger 模式的事件沒有 TWD 單價 → 掛上 lot_engine.twd_price_at 當價格查詢器
     （會走網路；抓不到就由 equity_curve 記進 missing_price_events，不亂編價格）。
     """
+    source = source or ("demo" if path else "ledger")
     if source == "ledger":
         try:
             from skills.analytics.position_ledger import load_events
@@ -206,8 +209,8 @@ def load_events_for_analysis(source: str = "demo", path: str = "") -> Dict[str, 
         events = load_events()
         if not events:
             return {"events": [], "source": "ledger", "price_lookup": None,
-                    "error": "本地帳本是空的。請先執行 reconcile_holdings 建立帳本，"
-                             "或改用 source='demo' 看訪客示範帳戶。"}
+                    "error": "本地帳本是空的。請先執行 reconcile_holdings 建立帳本"
+                             "（需已設定 MAX 金鑰）。"}
         return {"events": sorted(events, key=lambda e: e.get("ts") or 0),
                 "source": "ledger", "price_lookup": twd_price_at}
 

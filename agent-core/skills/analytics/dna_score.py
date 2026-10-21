@@ -317,15 +317,15 @@ def behavior_metrics(events: List[Dict[str, Any]], snap: Dict[str, Any]) -> Dict
 
 
 # ── 對外入口（LLM Tool）────────────────────────────────────────────
-def get_trading_dna_score(source: str = "demo", path: str = "") -> Dict[str, Any]:
+def get_trading_dna_score(source: str = "", path: str = "") -> Dict[str, Any]:
     """【LLM Tool】交易 DNA：六軸 0–100 性格分數 + 一句話 archetype 標籤。
 
     六軸為 活躍度／紀律／擇時／分散／持有耐心／風險控管，用 logistic 映射，
     永遠落在 5–95 之間（不會出現貼死量表兩端的 0 或 100）。
 
     Args:
-        source: 'demo'＝訪客示範帳戶 CSV 種子（預設）；'ledger'＝MAX 真實帳本
-        path: source='demo' 時的 CSV 路徑，留空用預設示範帳戶
+        source: 'ledger'＝MAX 真實帳本（預設）；'demo'＝訪客示範帳戶 CSV 種子
+        path: 示範帳戶 CSV 路徑；給了 path 且沒指定 source 時就讀這份 CSV
     """
     got = load_events_for_analysis(source=source, path=path)
     if got.get("error"):

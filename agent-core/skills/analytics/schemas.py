@@ -541,15 +541,15 @@ ANALYZE_TRADING_BEHAVIOR_SCHEMA = {
 
 # ──────────────────────────────────────────────
 #  交易 DNA 面板（CSV 種子帳本 → 淨值曲線 / 六軸分數 / 反事實）
-#  四支工具共用 source 參數：'demo'＝訪客示範帳戶 CSV、'ledger'＝MAX 真實帳本
+#  四支工具共用 source 參數：'ledger'＝MAX 真實帳本（預設）、'demo'＝訪客示範帳戶 CSV
 # ──────────────────────────────────────────────
 _DNA_SOURCE_PARAM = {
     "type": "string",
-    "enum": ["demo", "ledger"],
-    "description": "資料來源：demo＝訪客示範帳戶的 CSV 種子帳本（預設，離線可跑）；"
-                   "ledger＝使用者的 MAX 真實帳本（需已用 reconcile_holdings 建立本地帳本）。"
-                   "使用者已綁定 MAX 且問的是「我的」數字時用 ledger，其餘用 demo。",
-    "default": "demo",
+    "enum": ["ledger", "demo"],
+    "description": "資料來源：ledger＝使用者的 MAX 真實帳本（預設；需已用 reconcile_holdings 建立本地帳本）；"
+                   "demo＝訪客示範帳戶的 CSV 種子帳本（主辦 CSV 已移出 repo，多數環境不存在）。"
+                   "一般一律用 ledger，只有使用者明確要看示範資料時才用 demo。",
+    "default": "ledger",
 }
 _DNA_PATH_PARAM = {
     "type": "string",

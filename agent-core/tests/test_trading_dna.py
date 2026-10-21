@@ -245,7 +245,7 @@ def test_insufficient_data_flag_is_always_present(tmp_path):
     assert TOOL_CALLABLES["get_trading_dna_score"](path=str(empty))["insufficient_data"] is True
 
     if _HAS_CSV:                                   # 資料夠的那一側必須是 False
-        out = TOOL_CALLABLES["get_trading_dna_score"]()
+        out = TOOL_CALLABLES["get_trading_dna_score"](source="demo")
         assert out["insufficient_data"] is False
         assert out["metrics"]["trade_count"] >= ds.MIN_TRADES_FOR_ARCHETYPE
 
@@ -440,19 +440,31 @@ def test_every_tool_runs_with_default_args(name):
 
 
 def test_tools_degrade_gracefully_without_data(monkeypatch):
-    """找不到 CSV 時要回可讀的 error dict，不是往上炸例外（評審機器沒有資料也不能壞）。"""
+    """找不到 CSV、也沒有本地帳本時要回可讀的 error dict，不是往上炸例外（評審機器沒有資料也不能壞）。"""
+    from skills.analytics import position_ledger
     monkeypatch.setenv("MAIA_DEMO_CSV", "/nonexistent/nope.csv")
+    monkeypatch.setattr(position_ledger, "_LEDGER", "/nonexistent/ledger.jsonl")
     from agent.ollama_agent import TOOL_CALLABLES
     for name in TOOL_NAMES:
         out = TOOL_CALLABLES[name]()
         assert isinstance(out, dict) and "error" in out, f"{name} 沒有優雅降級"
 
 
+def test_source_defaults_to_ledger_unless_path_given(monkeypatch, tmp_path):
+    """主辦 CSV 已移出 repo → 沒指定 source 預設走 MAX 帳本；只有明確給 path 才讀 CSV。"""
+    from skills.analytics import position_ledger
+    monkeypatch.setattr(position_ledger, "_LEDGER", str(tmp_path / "none.jsonl"))
+    assert cs.load_events_for_analysis()["source"] == "ledger"
+    csv_path = tmp_path / "header_only.csv"
+    csv_path.write_text("timestamp,currency,price,action,change,balance\n", encoding="utf-8")
+    assert cs.load_events_for_analysis(path=str(csv_path))["source"] == "demo"
+
+
 @needs_csv
 def test_dna_tool_surfaces_calibration_warning():
     """係數是用合成資料調的，這件事必須跟著結果一起回去，不能只寫在註解裡。"""
     from agent.ollama_agent import TOOL_CALLABLES
-    out = TOOL_CALLABLES["get_trading_dna_score"]()
+    out = TOOL_CALLABLES["get_trading_dna_score"](source="demo")
     assert "重新校準" in out["calibration_note"]
     assert out["archetype"] == EXPECTED_ARCHETYPE
     assert out["axes"] == list(ds.AXES)
@@ -461,7 +473,7 @@ def test_dna_tool_surfaces_calibration_warning():
 @needs_csv
 def test_counterfactual_tool_carries_the_flag_and_caveat():
     from agent.ollama_agent import TOOL_CALLABLES
-    out = TOOL_CALLABLES["compare_sell_vs_hold"]()
+    out = TOOL_CALLABLES["compare_sell_vs_hold"](source="demo")
     assert out["capital_feasible"] is True
     assert out["hold_capital_required_twd"] == pytest.approx(EXPECTED_HOLD_CAPITAL, rel=1e-9)
     assert "不要說成" in out["caveat"]

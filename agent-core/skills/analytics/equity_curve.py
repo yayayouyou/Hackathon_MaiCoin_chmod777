@@ -247,12 +247,12 @@ def _drawdown(daily: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 # ── 對外入口（LLM Tool）────────────────────────────────────────────
-def get_equity_curve(source: str = "demo", path: str = "", limit: int = 0) -> Dict[str, Any]:
+def get_equity_curve(source: str = "", path: str = "", limit: int = 0) -> Dict[str, Any]:
     """【LLM Tool】加密資產淨值的每日時間序列（畫資產曲線用）。
 
     Args:
-        source: 'demo'＝訪客示範帳戶 CSV 種子（預設）；'ledger'＝MAX 真實帳本
-        path: source='demo' 時的 CSV 路徑，留空用預設示範帳戶
+        source: 'ledger'＝MAX 真實帳本（預設）；'demo'＝訪客示範帳戶 CSV 種子
+        path: 示範帳戶 CSV 路徑；給了 path 且沒指定 source 時就讀這份 CSV
         limit: 只回最近幾天（0＝全部）
     """
     got = load_events_for_analysis(source=source, path=path)
