@@ -284,13 +284,13 @@ def get_models(host: Optional[str] = None):
     - Ollama 模式：動態讀取 Ollama 伺服器上的可用模型列表。
     """
     if os.getenv("LLM_PROVIDER", "ollama").strip().lower() == "openrouter":
-        default = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
+        default = os.getenv("OPENROUTER_MODEL", "anthropic/claude-haiku-5.5")
         curated = [
             default,
-            "google/gemini-2.5-flash",       # 便宜快、1M context、中文佳（預設）
-            "anthropic/claude-sonnet-4.5",   # 決策品質最強、agentic 工具最穩
-            "deepseek/deepseek-chat-v3.1",   # 最省、中文佳
-            "openai/gpt-4.1-mini",           # OpenAI 平價選項
+            "anthropic/claude-haiku-5.5",    # 便宜、工具呼叫最穩（預設；2026-10 實測）
+            "deepseek/deepseek-v4.1-flash",  # 最省、中文佳，但分析時偏愛多叫工具
+            "openai/gpt-6-luna",             # OpenAI 平價選項
+            "anthropic/claude-sonnet-5.5",   # 決策品質最強，價格約 Haiku 的 20 倍
         ]
         seen, models = set(), []
         for m in curated:                     # 去重保序，default 置頂

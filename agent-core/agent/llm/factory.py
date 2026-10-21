@@ -12,7 +12,7 @@ from agent.llm.base import LLMProvider
 from agent.ollama_config import resolve_host, resolve_auth
 
 DEFAULT_OLLAMA_MODEL = "gemma4:12b-mlx"
-DEFAULT_OPENROUTER_MODEL = "google/gemini-2.5-flash"  # 舊的 claude-3.5-sonnet 已從 OpenRouter 下架
+DEFAULT_OPENROUTER_MODEL = "anthropic/claude-haiku-5.5"  # 2026-10 實測：工具呼叫最穩、$0.10/$0.50 per M；gemini-2.5-flash 會回空白、編造規則
 
 
 def get_provider(
